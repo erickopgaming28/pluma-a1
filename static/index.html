@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Pluma A1</title>
+<meta name="theme-color" content="#2743b8">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <svg viewBox="0 0 32 32" width="28" height="28" aria-hidden="true"><path d="M5 27c6-1 9-6 12-11s5-9 10-11c-1 6-4 9-9 12s-9 5-13 10z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M5 27l7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    <div><strong>Pluma A1</strong><span>Escribe y dibuja con tu Bambu Lab A1</span></div>
+  </div>
+  <div class="top-actions">
+    <button id="printerPill" class="pill" type="button"><i class="dot"></i><span>Impresora sin configurar</span></button>
+    <button id="openSettings" class="btn ghost" type="button">Ajustes</button>
+  </div>
+</header>
+
+<main>
+  <aside class="panel">
+    <h1 class="editor-title">Tu hoja, a mano</h1>
+    <p class="editor-intro">Combina letras y bocetos. La vista previa muestra los trazos que recorrerá la pluma.</p>
+    <div class="els">
+      <div class="els-add">
+        <button id="addText" class="btn" type="button">+ Texto</button>
+        <button id="addImage" class="btn" type="button">+ Imagen</button>
+      </div>
+      <div id="elList" class="chips"></div>
+      <p class="hint">Arrastra cada elemento en la hoja para acomodarlo. Estira desde la esquina azul para cambiar su tamaño.</p>
+    </div>
+    <p id="noSel" class="hint" hidden>Toca un elemento en la hoja para editarlo, o añade uno nuevo.</p>
+
+    <section id="rotationControls" class="rotation-controls" hidden aria-label="Rotación del elemento">
+      <div class="geometry-grid">
+        <label class="field"><span class="lbl">X en la hoja (mm)</span><input id="elementX" type="number" step="0.5"></label>
+        <label class="field"><span class="lbl">Y en la hoja (mm)</span><input id="elementY" type="number" step="0.5"></label>
+        <label class="field"><span class="lbl">Ancho (mm)</span><input id="elementW" type="number" min="15" max="400" step="0.5"></label>
+        <label class="field"><span class="lbl">Alto (mm)</span><input id="elementH" type="number" min="1" step="0.5" aria-describedby="sizeHint"></label>
+      </div>
+      <p id="sizeHint" class="hint">Las imágenes conservan su proporción; el alto del texto depende de su contenido.</p>
+      <label class="field" for="rotationAngle"><span class="lbl">Rotación del elemento (°)</span>
+        <input id="rotationAngle" type="number" min="-180" max="180" step="1" value="0">
+      </label>
+      <input id="rotationSlider" type="range" min="-180" max="180" step="1" value="0" aria-label="Ángulo de rotación">
+      <div class="rotation-actions">
+        <button class="btn ghost" id="rotateLeft" type="button">Girar −90°</button>
+        <button class="btn ghost" id="rotateRight" type="button">Girar +90°</button>
+        <button class="btn ghost" id="rotateReset" type="button">Restablecer</button>
+      </div>
+      <p class="hint">Gira el elemento alrededor de su centro. El dibujo se enviará con este ángulo.</p>
+    </section>
+
+    <section id="tab-text" class="tab-body" hidden>
+      <label class="field">
+        <span class="lbl">Tu texto</span>
+        <textarea id="text" rows="9" spellcheck="false" placeholder="Escribe aquí lo que quieres que la pluma transcriba…"></textarea>
+      </label>
+      <div class="field">
+        <span class="lbl">Tipo de letra</span>
+        <div id="fonts" class="fonts"></div>
+      </div>
+      <div class="field">
+        <span class="lbl">Alineación</span>
+        <div class="seg" data-opt="text.align">
+          <button data-v="left">Izquierda</button><button data-v="center">Centro</button><button data-v="right">Derecha</button>
+        </div>
+      </div>
+      <div id="textSliders"></div>
+      <label class="check"><input type="checkbox" data-opt="text.join"> Unir las letras cuando se tocan</label>
+      <button id="reseed" class="btn ghost wide" type="button">Otra variación de la letra</button>
+    </section>
+
+    <section id="tab-image" class="tab-body" hidden>
+      <label id="drop" class="drop">
+        <input id="file" type="file" accept="image/*" hidden>
+        <img id="thumb" alt="" hidden>
+        <span id="dropText"><strong>Cambiar la imagen</strong> de este elemento</span>
+      </label>
+      <div class="image-actions">
+        <button id="cropImage" class="btn" type="button">Recortar imagen…</button>
+        <button id="restoreCrop" class="btn ghost" type="button" disabled>Imagen completa</button>
+      </div>
+      <p id="cropSummary" class="hint">Se usa la imagen completa.</p>
+      <div class="field">
+        <span class="lbl">Cómo dibujar la imagen</span>
+        <div class="seg image-modes" data-opt="image.mode">
+          <button data-v="trazo">Una línea</button><button data-v="contornos">Sólo bordes</button><button data-v="boceto">Boceto</button><button data-v="rayado">Sombreado</button>
+        </div>
+      </div>
+      <p id="imageModeHint" class="hint" role="status"></p>
+      <div id="imageSliders"></div>
+      <label class="check"><input type="checkbox" data-opt="image.cross"> Rayado cruzado</label>
+      <label class="check"><input type="checkbox" data-opt="image.invert"> Invertir claro y oscuro</label>
+      <button id="resetImageAdjustments" class="btn ghost wide" type="button">Restablecer ajustes del dibujo</button>
+    </section>
+
+    <section id="tab-colors" class="tab-body colors" hidden>
+      <div class="field">
+        <span class="lbl">Color</span>
+        <div class="seg" id="colorMode">
+          <button data-v="single">Un solo color</button><button data-v="multi">Multicolor</button>
+        </div>
+      </div>
+      <div id="penChips" class="chips"></div>
+      <p id="colorHint" class="hint"></p>
+      <div class="els-add">
+        <button id="dupEl" class="btn ghost" type="button">Duplicar</button>
+        <button id="delEl" class="btn ghost" type="button">Eliminar</button>
+      </div>
+    </section>
+  </aside>
+
+  <section class="stage">
+    <div class="workflow"><span>Crear el diseño</span><span>Ajustar hoja y pluma</span><span>Revisar y enviar</span></div>
+    <div id="banner" class="banner" hidden></div>
+    <div class="canvas-wrap"><canvas id="cv"></canvas><div id="busy" class="busy" hidden>Convirtiendo…</div></div>
+    <footer class="bar">
+      <div id="stats" class="stats">—</div>
+      <div class="bar-actions">
+        <button id="guide" class="btn ghost" type="button">Ubicar hoja…</button>
+        <button id="level" class="btn ghost" type="button">Nivelar cama…</button>
+        <button id="adjust" class="btn" type="button">Ajustar pluma…</button>
+        <button id="movePrinter" class="btn" type="button">Mover A1…</button>
+        <button id="simulate" class="btn ghost" type="button">Simular trazo</button>
+        <button id="send" class="btn primary" type="button">Enviar a la impresora…</button>
+      </div>
+    </footer>
+  </section>
+</main>
+
+<dialog id="cropDlg" aria-labelledby="cropTitle">
+  <form method="dialog" class="dlg crop-dlg" novalidate>
+    <h2 id="cropTitle">Recortar imagen</h2>
+    <p class="hint">Arrastra las esquinas para recortar o el centro para mover el marco. También puedes escribir los porcentajes. Sólo el área marcada se convierte en trazos.</p>
+    <div class="crop-stage"><canvas id="cropCanvas" aria-label="Vista del recorte; usa los controles de porcentaje para ajustarlo con el teclado"></canvas></div>
+    <p id="cropStatus" class="hint" role="status"></p>
+    <div class="image-actions" aria-label="Encuadres rápidos">
+      <button type="button" class="btn ghost" data-crop-ratio="full">Completa</button>
+      <button type="button" class="btn ghost" data-crop-ratio="1">Cuadrado</button>
+      <button type="button" class="btn ghost" data-crop-ratio="0.75">Vertical 3:4</button>
+      <button type="button" class="btn ghost" data-crop-ratio="1.3333333333">Horizontal 4:3</button>
+    </div>
+    <div class="geometry-grid crop-values">
+      <label class="field"><span class="lbl">Desde izquierda (%)</span><input id="cropX" type="number" min="0" max="99.99" step="0.01"></label>
+      <label class="field"><span class="lbl">Desde arriba (%)</span><input id="cropY" type="number" min="0" max="99.99" step="0.01"></label>
+      <label class="field"><span class="lbl">Ancho (%)</span><input id="cropW" type="number" min="0.1" max="100" step="0.01"></label>
+      <label class="field"><span class="lbl">Alto (%)</span><input id="cropH" type="number" min="0.1" max="100" step="0.01"></label>
+    </div>
+    <div class="dlg-actions"><button class="btn ghost" value="cancel">Cancelar</button><span class="grow"></span><button id="applyCrop" class="btn primary" type="button">Aplicar recorte</button></div>
+  </form>
+</dialog>
+
+<dialog id="sendDlg">
+  <form method="dialog" class="dlg">
+    <h2>Enviar a la impresora</h2>
+    <p id="preflight" class="preflight" role="status"></p>
+    <label class="field">
+      <span class="lbl">Ruta de envío</span>
+      <select id="sendTransport" aria-describedby="sendTransportHint">
+        <option value="stream">Comandos directos (PC encendida)</option>
+        <option value="gcode_file">G-code puro (compatibilidad)</option>
+        <option value="project_file">Paquete 3MF (alternativo)</option>
+      </select>
+    </label>
+    <p id="sendTransportHint" class="hint transport-hint">Los comandos directos recorren el dibujo desde esta PC: mantenla encendida, con el programa abierto y conectada a la A1 hasta terminar. Las rutas de archivo guardan los mismos comandos G-code; su aceptación depende del firmware. No se envía un modelo STL.</p>
+    <p id="sendError" class="operation-error" role="alert" hidden></p>
+    <div class="field">
+      <span class="lbl">Qué mandar</span>
+      <div id="sendWhat" class="radios"></div>
+    </div>
+    <label class="check"><input type="checkbox" id="penReady"> La pluma ya está ajustada: dibujar directamente</label>
+    <div class="steps" id="stepsFull">
+      <p><b>1.</b> Sujeta la hoja en la cama, en la posición que muestra la vista previa.</p>
+      <p><b>2.</b> Deja la pluma <b>retirada o levantada</b>: la impresora primero se calibra tocando la cama con la boquilla.</p>
+      <p><b>3.</b> Si la A1 acepta y ejecuta el trabajo, llevará el soporte al centro de la hoja y se pondrá en pausa. Baja la pluma hasta que <b>toque la hoja</b>, apriétala y pulsa <b>Reanudar en esta app</b>.</p>
+    </div>
+    <div class="steps" id="stepsReady" hidden>
+      <p>Se dibuja sin volver a calibrar ni hacer la pausa de ajuste inicial. Úsalo sólo si acabas de hacer <b>Ajustar pluma</b> y desde entonces no has apagado la impresora ni movido el eje Z a mano. Si hay varios colores, se pausa para cambiar de pluma.</p>
+    </div>
+    <div class="dlg-actions">
+      <button class="btn ghost" value="cancel">Cancelar</button>
+      <span class="grow"></span>
+      <button id="downloadGcode" class="btn" type="button">G-code</button>
+      <button id="download" class="btn" type="button">Paquete 3MF</button>
+      <button id="downloadSvg" class="btn" type="button">SVG</button>
+      <button id="doSend" class="btn primary" type="button">Enviar</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="moveDlg" aria-labelledby="moveTitle" aria-describedby="moveIntro">
+  <form method="dialog" class="dlg move-dlg">
+    <h2 id="moveTitle">Mover A1 con comandos</h2>
+    <p id="moveIntro">Envía un comando a la vez. Comienza por comprobar si la A1 acepta comandos directos; esa comprobación no mueve los ejes.</p>
+    <button id="probeDirect" class="btn wide" type="button" autofocus>Comprobar comandos (sin movimiento)</button>
+    <p id="directResult" class="direct-result" role="status" aria-live="polite" aria-atomic="true">Todavía no se ha enviado ningún comando.</p>
+    <details id="directDetails" hidden>
+      <summary>Ver G-code del comando</summary>
+      <pre id="directGcode"></pre>
+    </details>
+
+    <fieldset class="direct-controls">
+      <legend>Movimiento corto</legend>
+      <p class="hint">X e Y desplazan la punta sobre la cama; Z cambia su altura. Observa el recorrido y la punta antes de cada paso.</p>
+      <label class="check direct-check"><input id="directHomed" type="checkbox"> Los ejes ya están referenciados y la zona está libre</label>
+      <p id="directGate" class="hint">Confirma la referencia de los ejes para habilitar los movimientos.</p>
+      <div class="jog-grid">
+        <span class="jog-heading">Eje</span><span class="jog-heading">Paso (mm)</span><span class="jog-heading">Dirección</span>
+        <strong>X</strong><select id="jogStepX" aria-label="Paso del eje X en milímetros"><option value="0.1">0,1</option><option value="1" selected>1</option><option value="5">5</option><option value="10">10</option></select><div class="jog-actions"><button class="btn" type="button" data-jog="X" data-sign="-1" aria-label="Mover X en dirección negativa">X −</button><button class="btn" type="button" data-jog="X" data-sign="1" aria-label="Mover X en dirección positiva">X +</button></div>
+        <strong>Y</strong><select id="jogStepY" aria-label="Paso del eje Y en milímetros"><option value="0.1">0,1</option><option value="1" selected>1</option><option value="5">5</option><option value="10">10</option></select><div class="jog-actions"><button class="btn" type="button" data-jog="Y" data-sign="-1" aria-label="Mover Y en dirección negativa">Y −</button><button class="btn" type="button" data-jog="Y" data-sign="1" aria-label="Mover Y en dirección positiva">Y +</button></div>
+        <strong>Z</strong><select id="jogStepZ" aria-label="Paso del eje Z en milímetros"><option value="0.1">0,1</option><option value="1" selected>1</option></select><div class="jog-actions"><button class="btn" type="button" data-jog="Z" data-sign="-1" aria-label="Bajar Z">Z −</button><button class="btn" type="button" data-jog="Z" data-sign="1" aria-label="Subir Z">Z +</button></div>
+      </div>
+      <p class="hint">Z ofrece pasos de hasta 1 mm para acercarse a la hoja con cuidado. Para usar X, Y, Z o levantar la pluma, confirma la referencia de los ejes.</p>
+    </fieldset>
+
+    <fieldset class="direct-controls">
+      <legend>Alturas de la pluma</legend>
+      <p id="directPenHeights" class="hint"></p>
+      <label class="check direct-check"><input id="directPenReady" type="checkbox"> La altura de escritura ya está calibrada</label>
+      <div class="direct-pen-actions"><button id="penUpDirect" class="btn" type="button">Levantar pluma</button><button id="penDownDirect" class="btn" type="button">Bajar a escritura</button></div>
+    </fieldset>
+
+    <div class="direct-home">
+      <p class="hint">Si falta la referencia de los ejes, retira primero la pluma y la hoja. El homing utiliza la boquilla y puede recorrer la cama.</p>
+      <button id="homeDirect" class="btn" type="button">Referenciar ejes…</button>
+    </div>
+    <div class="dlg-actions"><span class="grow"></span><button id="closeMove" class="btn ghost" value="close">Cerrar</button></div>
+  </form>
+</dialog>
+
+<dialog id="levelDlg">
+  <form method="dialog" class="dlg">
+    <h2>Nivelar cama</h2>
+    <div class="steps">
+      <p>Lanza la <b>nivelación de cama propia de Bambu Lab</b>, la misma del menú Calibración de la impresora. Tarda unos minutos.</p>
+      <p><b>Antes:</b> quita la pluma y la hoja. La boquilla se calienta y va tocando toda la cama.</p>
+      <p>Cuando termine, vuelve a poner la hoja y usa <b>Ajustar pluma</b>.</p>
+    </div>
+    <div class="dlg-actions">
+      <button class="btn ghost" value="cancel">Cancelar</button>
+      <span class="grow"></span>
+      <button id="doLevel" class="btn primary" type="button">Nivelar ahora</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="adjustDlg">
+  <form method="dialog" class="dlg">
+    <h2>Ajustar pluma</h2>
+    <div class="steps">
+      <p><b>1.</b> Sujeta la hoja en la cama y deja la pluma <b>retirada o levantada</b>.</p>
+      <p><b>2.</b> La impresora hace homing con su boquilla y, si está activado, nivelado. Este arranque en frío necesita verificarse en tu firmware.</p>
+      <p><b>3.</b> Si la A1 acepta y ejecuta el trabajo, llevará el soporte al centro de la hoja, a la altura de escritura, y se pondrá en pausa.</p>
+      <p><b>4.</b> Baja la pluma a mano hasta que <b>toque la hoja</b>, aprieta el tornillo y pulsa <b>Listo</b>. Espera a que la A1 confirme el fin del ajuste antes de enviar el dibujo.</p>
+    </div>
+    <p class="hint">Se usará la ruta guardada en Ajustes. Con comandos directos, la PC debe permanecer encendida y el programa abierto.</p>
+    <p id="adjustError" class="operation-error" role="alert" hidden></p>
+    <div class="dlg-actions">
+      <button class="btn ghost" value="cancel">Cancelar</button>
+      <span class="grow"></span>
+      <button id="doAdjust" class="btn primary" type="button">Enviar y empezar</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="guideDlg">
+  <form method="dialog" class="dlg">
+    <h2>Ubicar la hoja en la cama</h2>
+    <div class="steps">
+      <p>Si la A1 acepta el recorrido, la pluma señalará las esquinas donde debe quedar la hoja. En cada pausa, acomoda la hoja y pulsa <b>Siguiente en esta app</b>. Con las rutas de archivo también puedes usar Reanudar en la impresora.</p>
+      <p><b>1.</b> Deja la pluma <b>retirada o levantada</b> y la cama despejada: primero hace el homing.</p>
+      <p><b>2.</b> En la primera pausa coloca la pluma.</p>
+      <p><b>3.</b> Sujeta la hoja con las esquinas donde apunta la pluma.</p>
+    </div>
+    <ol id="guideList" class="hint"></ol>
+    <p class="hint">Se usará la ruta guardada en Ajustes. Con comandos directos, la PC debe permanecer encendida y el programa abierto.</p>
+    <p id="guideError" class="operation-error" role="alert" hidden></p>
+    <div class="dlg-actions">
+      <button class="btn ghost" value="cancel">Cancelar</button>
+      <span class="grow"></span>
+      <button id="doGuide" class="btn primary" type="button">Enviar y empezar</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="settingsDlg">
+  <form method="dialog" class="dlg wide">
+    <h2>Ajustes</h2>
+    <div class="cols">
+      <fieldset>
+        <legend>Impresora (red local)</legend>
+        <label class="row"><span>Dirección IP</span><input data-cfg="printer.ip" placeholder="192.168.1.50" autocomplete="off"></label>
+        <label class="row"><span>Número de serie</span><input data-cfg="printer.serial" placeholder="03919C…" autocomplete="off"></label>
+        <label class="row"><span>Código de acceso</span><input data-cfg="printer.access_code" type="password" placeholder="8 caracteres" autocomplete="off"></label>
+        <label class="row"><span>Ruta de envío de trabajos</span><select data-cfg="printer.transport"><option value="stream">Comandos directos (PC encendida)</option><option value="gcode_file">G-code puro (compatibilidad)</option><option value="project_file">Paquete 3MF (alternativo)</option></select></label>
+        <p class="hint">Con comandos directos, esta PC envía el recorrido: mantenla encendida, con el programa abierto y conectada a la A1 hasta terminar. Las dos rutas de archivo contienen G-code de movimiento; su compatibilidad depende del firmware. «Mover A1» permite comprobar comandos individuales sin descargar un STL.</p>
+        <label class="row"><span>Material declarado en el archivo</span><select data-cfg="printer.material"><option value="PLA">PLA</option><option value="PETG">PETG</option></select></label>
+        <p class="hint">Elige el tipo que muestra tu A1. Se declara un solo material para identificar el archivo; los trabajos de pluma mantienen consumo cero, sin calentamiento ni extrusión, y AMS desactivado.</p>
+        <button id="discover" class="btn wide" type="button">Buscar mi impresora en la red</button>
+        <div id="found" class="found"></div>
+        <p class="hint">El código está en la pantalla de la impresora: Ajustes → WLAN / Red. Para que acepte trabajos de esta app activa ahí «Modo solo LAN» y «Modo desarrollador», y ten puesta la microSD.</p>
+      </fieldset>
+
+      <fieldset>
+        <legend>Hoja</legend>
+        <p class="hint">Para la primera prueba usa A5 o media carta. Carta y A4 no caben completas en el recorrido de 256 × 256 mm; el soporte reduce aún más el alcance.</p>
+        <label class="row"><span>Tamaño</span>
+          <select data-cfg="paper.size">
+            <option value="carta">Carta (216 × 279)</option><option value="media_carta">Media carta (140 × 216)</option>
+            <option value="a4">A4 (210 × 297)</option><option value="a5">A5 (148 × 210)</option><option value="custom">Personalizado</option>
+          </select></label>
+        <label class="row custom-size"><span>Ancho × alto (mm)</span><span class="pair"><input data-cfg="paper.width" type="number" step="0.1"><input data-cfg="paper.height" type="number" step="0.1"></span></label>
+        <label class="check"><input type="checkbox" data-cfg="paper.landscape"> Hoja horizontal</label>
+        <label class="row"><span>Esquina inferior izquierda de la hoja en la cama, X / Y (mm)</span><span class="pair"><input data-cfg="paper.bed_x" type="number" step="0.5"><input data-cfg="paper.bed_y" type="number" step="0.5"></span></label>
+        <label class="row"><span>Margen (mm)</span><input data-cfg="paper.margin" type="number" step="1" min="0"></label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Pluma y movimiento</legend>
+        <button id="gentleProfile" class="btn wide" type="button">Usar velocidades para primera prueba</button>
+        <label class="row"><span>Posición de la pluma respecto a la boquilla, X / Y (mm)</span><span class="pair"><input data-cfg="pen.offset_x" type="number" step="0.5"><input data-cfg="pen.offset_y" type="number" step="0.5"></span></label>
+        <label class="row"><span>Altura al escribir / al viajar (mm)</span><span class="pair"><input data-cfg="pen.z_down" type="number" step="0.1" min="0.5"><input data-cfg="pen.z_up" type="number" step="0.1"></span></label>
+        <label class="row"><span>Velocidad al escribir / al viajar (mm/s)</span><span class="pair"><input data-cfg="pen.draw_speed" type="number" step="5" min="5"><input data-cfg="pen.travel_speed" type="number" step="10" min="20"></span></label>
+        <p class="hint">Siempre se pausa para colocar la pluma después del homing. El modo «pluma ajustada» conserva la referencia anterior de los ejes.</p>
+        <label class="check"><input type="checkbox" data-cfg="pen.level_bed"> Nivelar la cama automáticamente al inicio (auto-calibración de la A1, ~1 min)</label>
+        <p class="hint">Las alturas y el desplazamiento dependen de tu soporte. Y −35 mm es una estimación inicial. Ajusta la punta para que toque la hoja durante la pausa, sin forzar el resorte.</p>
+      </fieldset>
+
+      <fieldset>
+        <legend>Mis plumas</legend>
+        <div id="pensEdit" class="pens-edit"></div>
+        <button id="addPen" class="btn wide" type="button">Añadir pluma</button>
+      </fieldset>
+
+      <fieldset class="span2">
+        <legend>Usar desde el celular</legend>
+        <p class="hint">Con el celular en la misma red WiFi que esta PC, abre en Chrome: <b id="lanUrl" class="url"></b>. Luego menú ⋮ → «Añadir a pantalla de inicio» para tenerla como app. La PC debe seguir encendida con el programa abierto.</p>
+      </fieldset>
+
+      <fieldset class="span2">
+        <legend>Calibrar la posición de la pluma</legend>
+        <p class="hint">Dibuja una cruz que debería quedar a 30 mm del borde izquierdo y 30 mm del borde inferior de la hoja. Mide dónde quedó en realidad y escríbelo aquí.</p>
+        <div class="cal">
+          <button id="calDraw" class="btn" type="button">Preparar marca de prueba</button>
+          <label>Desde la izquierda <input id="calX" type="number" step="0.5" value="30"> mm</label>
+          <label>Desde abajo <input id="calY" type="number" step="0.5" value="30"> mm</label>
+          <button id="calFix" class="btn" type="button">Corregir</button>
+        </div>
+      </fieldset>
+    </div>
+    <div class="dlg-actions">
+      <button class="btn ghost" value="cancel">Cancelar</button>
+      <span class="grow"></span>
+      <button id="saveSettings" class="btn primary" type="button">Guardar</button>
+    </div>
+  </form>
+</dialog>
+
+<div id="toast" class="toast" role="status" popover="manual"></div>
+<!-- type=module: las variables del programa no chocan con las que inyectan las extensiones del navegador -->
+<script type="module" src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,17 @@
+* text=auto
+*.py text eol=lf
+*.js text eol=lf
+*.mjs text eol=lf
+*.html text eol=lf
+*.css text eol=lf
+*.md text eol=lf
+*.svg text eol=lf
+*.yml text eol=lf
+*.bat text eol=crlf
+android/gradlew text eol=lf
+*.png binary
+*.jpg binary
+*.jar binary
+# Conserva los archivos originales y los campos vacíos del perfil A1.
+fonts/** whitespace=-blank-at-eol
+plotter/a1_reference_config.txt whitespace=-blank-at-eol

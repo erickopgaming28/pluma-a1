@@ -1,0 +1,66 @@
+plugins {
+    id 'com.android.application'
+    id 'com.chaquo.python'
+}
+
+// El motor (app.py, plotter/) y la interfaz (static/, fonts/) son los mismos de la app de PC:
+// se copian desde la carpeta de arriba en cada compilación, sin modificarlos.
+def shared = rootProject.file("..")
+def generated = layout.buildDirectory.dir("generated/pluma")
+
+def syncShared = tasks.register("syncShared", Sync) {
+    into generated
+    from(shared) {
+        include "app.py", "plotter/*.py"
+        into "python"
+    }
+    from(shared) {
+        include "static/**", "fonts/**"
+        into "assets"
+    }
+    doLast {
+        // en Android los paquetes de Python necesitan __init__.py
+        generated.get().file("python/plotter/__init__.py").asFile.text = ""
+    }
+}
+
+android {
+    namespace 'com.plumaa1.app'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId "com.plumaa1.app"
+        minSdk 24          // el OpenCV para Android exige Android 7 o superior
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+        ndk { abiFilters "arm64-v8a" }
+    }
+    sourceSets {
+        main { assets.srcDir generated.map { it.dir("assets") } }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+chaquopy {
+    defaultConfig {
+        version = "3.10"   // la versión para la que existe OpenCV (con ximgproc) en Android
+        buildPython("py", "-3.10")
+        pip {
+            install "numpy==1.26.2"
+            install "opencv-contrib-python-headless==4.5.1.48"
+            install "pillow"
+            install "flask"
+            install "paho-mqtt"
+        }
+    }
+    sourceSets {
+        getByName("main") { srcDir generated.map { it.dir("python") } }
+    }
+}
+
+// todo lo que lee esos archivos copiados (fuentes de Python, assets, lint...) va después de la copia
+tasks.matching { it.name != "syncShared" && it.name != "clean" }.configureEach { dependsOn syncShared }

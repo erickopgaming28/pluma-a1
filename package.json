@@ -1,0 +1,11 @@
+{
+  "name": "pluma-a1-editor-tests",
+  "private": true,
+  "description": "Pruebas offline del editor de Pluma A1",
+  "scripts": {
+    "test:ui": "node tests/verify-editor.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
+  }
+}

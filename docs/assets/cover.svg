@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="400" viewBox="0 0 1280 400" role="img" aria-labelledby="title desc">
+  <title id="title">Pluma A1 — Del diseño al papel</title>
+  <desc id="desc">Una trayectoria azul sobre una hoja junto al nombre del proyecto. App local para escribir y dibujar con la Bambu Lab A1.</desc>
+  <rect width="1280" height="400" rx="24" fill="#f1ede4"/>
+  <rect x="28" y="28" width="1224" height="344" rx="18" fill="#fbfaf6"/>
+  <path d="M900 58H1194V342H900Z" fill="#f3f0e8"/>
+  <rect x="918" y="76" width="258" height="248" rx="4" fill="#fff"/>
+  <path d="M942 258L971 238L1001 199L1021 153L1029 120L1024 111L1011 119L991 159L976 202L961 260M976 220L1004 174L1023 163L1035 169L1035 185L1028 218L1033 238L1048 243L1067 231L1086 200L1110 165L1123 161L1131 168L1127 188L1107 216L1083 226L1084 213L1098 201L1119 197L1146 207" fill="none" stroke="#2743b8" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="942" cy="258" r="5" fill="#2743b8"/>
+  <circle cx="1146" cy="207" r="5" fill="#2743b8"/>
+  <text x="80" y="165" fill="#23242a" font-family="Segoe UI,Arial,sans-serif" font-size="78" font-weight="700">Pluma A1</text>
+  <text x="84" y="225" fill="#2743b8" font-family="Segoe UI,Arial,sans-serif" font-size="32">Del diseño al papel.</text>
+  <text x="84" y="285" fill="#5d5b56" font-family="Segoe UI,Arial,sans-serif" font-size="21">Escribe · Recorta · Gira · Dibuja</text>
+  <text x="84" y="318" fill="#5d5b56" font-family="Segoe UI,Arial,sans-serif" font-size="17">Una app local en español para tu Bambu Lab A1.</text>
+</svg>

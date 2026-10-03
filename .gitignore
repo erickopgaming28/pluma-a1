@@ -1,0 +1,46 @@
+# Configuración privada de la impresora y credenciales
+/config.json
+/config.tmp
+.env
+.env.*
+*.pem
+*.key
+*.jks
+*.keystore
+
+# Entornos y archivos de ejecución
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+node_modules/
+*.log
+.claude/
+.codex/
+.agents/
+.DS_Store
+Thumbs.db
+
+# Diagnósticos y trabajos privados de esta máquina
+/.diagnostic*
+/diagnostico*.json
+/estado*.json
+/*.gcode
+/*.3mf
+/*.jpg
+/*.png
+
+# Capturas generadas; el dibujo de prueba es público
+/tests/artifacts/*
+!/tests/artifacts/image-source.png
+
+# Compilación Android y configuración de SDK local
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/*.apk
+
+# Resultados de pruebas de navegador
+playwright-report/
+test-results/

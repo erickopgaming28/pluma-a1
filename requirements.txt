@@ -1,0 +1,5 @@
+flask
+numpy
+pillow
+opencv-contrib-python-headless
+paho-mqtt
