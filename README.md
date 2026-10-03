@@ -20,7 +20,7 @@ Pluma A1 convierte texto e imágenes en recorridos de pluma para una Bambu Lab A
 
 ![Editor de Pluma A1 con texto rotado y una imagen convertida en trazos](docs/assets/editor.png)
 
-> **Estado:** proyecto experimental. Hay 76 pruebas del motor y revisión del editor en escritorio y móvil. Incluyen una imagen de 4000 × 4000 píxeles convertida, rotada, exportada y transmitida íntegramente a un receptor de prueba. El usuario ha observado movimientos de ajuste en una A1; la fluidez y la precisión de los dibujos completos todavía requieren comprobación física. Las capturas usan diseños de prueba, sin conexión a una impresora.
+> **Estado:** proyecto experimental. Hay 84 pruebas del motor y revisión del editor en escritorio y móvil. Incluyen una imagen de 4000 × 4000 píxeles convertida, rotada, exportada y transmitida íntegramente a un receptor de prueba. El usuario observó dibujos con tinta desigual entre zonas; la uniformidad de contacto, fluidez y precisión todavía requieren comprobación física. Las capturas usan diseños de prueba, sin conexión a una impresora.
 
 ## Crear tu diseño
 
@@ -29,6 +29,8 @@ Pluma A1 convierte texto e imágenes en recorridos de pluma para una Bambu Lab A
 | **Escribir a mano** | Fuentes de trazos, tamaño, interlineado, inclinación y variación del pulso. |
 | **Dibujar con una línea** | Sigue el centro de las franjas oscuras, sin contorno doble ni sombreado. |
 | **Elegir el acabado** | Una línea, sólo bordes, boceto o sombreado por rayado. |
+| **Convertir fotografías** | Foto a líneas conserva cambios de tono sin sombreado, con limpieza de textura ajustable. |
+| **Comprobar el apoyo** | Prepara nueve cruces repartidas entre las zonas trasera, central y frontal. |
 | **Recortar imágenes** | Marco arrastrable, esquinas, porcentajes y encuadres rápidos. |
 | **Componer la hoja** | Mueve, duplica, redimensiona y rota cada texto o imagen. |
 | **Cambiar de color** | Capas por pluma y pausas para el cambio manual. |
@@ -75,6 +77,8 @@ La ruta inicial envía **comandos G-code directos por MQTT**. Alimenta la cola d
 Las imágenes grandes se preparan en un trabajador con mensajes de avance. Cambiar un ajuste descarta la conversión anterior. La ordenación usa un índice espacial a partir de 4096 trazos y la vista previa reutiliza los recorridos al moverlos o girarlos. El envío mantiene una ventana estimada de 12 segundos, con reserva para seguir alimentando la cola; un paquete individual largo puede superar esa ventana. Los tiempos de espera incluyen el recorrido pendiente estimado. La estimación regula el envío; el fin sigue exigiendo una confirmación física nueva.
 
 La exportación G-code/3MF se conserva como alternativa; que un archivo se suba o una orden sea aceptada no confirma que el firmware lo haya ejecutado. No se envía un modelo STL para dibujar ni se requiere extrusión.
+
+El aviso final confirma que se recibió la señal situada detrás de la barrera del recorrido; **no certifica tinta ni contacto de la punta**. Los marcadores finales 204/205 se separan de los checkpoints 200/201 para que una señal intermedia retrasada no cierre el trabajo. La compensación de cama se activa después del sondeo y también al reutilizar la nivelación con «pluma ya ajustada». **Ajustar pluma** sondea toda la cama; la medición normal incluye el área de la boquilla y la punta desplazada.
 
 ## Antes de la primera marca
 

@@ -116,6 +116,28 @@ class LargeStreamTests(unittest.TestCase):
         self.wait(lambda: not job.active)
         self.assertEqual(job.snapshot()['state'], 'FINISH')
 
+    def test_delayed_intermediate_marker_cannot_claim_final_completion(self):
+        class DelayedFinal(FakeLink):
+            def send_gcode(self, text, wait=6):
+                self.sent.append(text)
+                if text.startswith('M400\n'):
+                    # A freshly received 200/201 belongs to a prior checkpoint.
+                    self.status['stg_cur'] = 200; self.stage_version += 1
+                elif 'gcode_claim_action' in text:
+                    self.confirm(text)
+                return {'result': 'SUCCESS'}
+        link = DelayedFinal()
+        job = DirectJob(block_timeout=.2, poll_interval=.002)
+        job.start(program('G1 X0 Y0 Z3 F12000', 'G1 X1 F2400'), 'señal final', link, continuous=True)
+        self.wait(lambda: bool(link.sent) and link.sent[-1].startswith('M400\n'))
+        self.assertRegex(link.sent[-1], r'action : 20[45]')
+        time.sleep(.03)
+        self.assertTrue(job.active)
+        link.confirm()
+        self.wait(lambda: not job.active)
+        self.assertEqual(job.snapshot()['state'], 'FINISH')
+        self.assertFalse(job.snapshot()['ink_verified'])
+
     def test_feeding_is_paced_without_extra_stop_commands(self):
         clock_value = [0.0]
         def clock():

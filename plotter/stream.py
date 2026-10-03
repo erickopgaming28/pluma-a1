@@ -4,7 +4,7 @@ Un ACK sólo confirma aceptación. Hasta cuatro paquetes consecutivos forman
 una unidad de hasta 20 s nominales. En modo continuo el marcador intermedio
 acredita avance del intérprete, NO fin físico: no vacía la cola con M400.
 Pausas, cancelación, rutinas aisladas y fin requieren M400 y marcador fresco.
-Los valores 200/201 son marcadores comprobados por proyectos de la comunidad,
+Los valores 200..205 son marcadores comprobados por proyectos de la comunidad,
 no una garantía publicada por Bambu. El diagnóstico de la app debe probarlos.
 """
 from dataclasses import dataclass
@@ -298,6 +298,7 @@ class DirectJob:
         self._clock = clock or time.monotonic
         self._buffer_until = 0.0
         self._continuous = False
+        self._final_marker = 205
         self._condition = threading.Condition()
         self._active = False
         self._pause_requested = False
@@ -331,6 +332,9 @@ class DirectJob:
                 raise ValueError("Ya hay un dibujo directo activo.")
             self._active = True
             self._continuous = continuous
+            self._final_marker = 204 if self._final_marker == 205 else 205
+            if str(link.status.get('stg_cur')) == str(self._final_marker):
+                self._final_marker = 409 - self._final_marker
             self._buffer_until = self._clock()
             self._pause_requested = self._stop_requested = False
             self._pause_message = ""
@@ -497,11 +501,15 @@ class DirectJob:
             with self._condition:
                 self._data['executed_percent'] = min(99, int(executed * 100 / total))
 
-        def drain_pending():
+        def drain_pending(final=False):
             nonlocal marker
-            if pending_lines:
-                self._send_block(_Block(()), link, key, marker)
-                marker = 401 - marker
+            if pending_lines or final:
+                # La señal final no se reutiliza en los checkpoints intermedios:
+                # un reporte retrasado de 200/201 no puede terminar el trabajo.
+                barrier_marker = self._final_marker if final else marker
+                self._send_block(_Block(()), link, key, barrier_marker)
+                if not final:
+                    marker = 401 - marker
                 credit_execution()
 
         def gate():
@@ -558,13 +566,14 @@ class DirectJob:
                         if not self._stop_requested and not self._pause_requested:
                             self._data["message"] = ('Transmitiendo el recorrido continuo. El fin se confirma al terminar.'
                                                      if self._continuous and not drained else 'Grupo ejecutado y confirmado por la impresora.')
-            drain_pending()
+            drain_pending(final=self._continuous)
             self._health(link, key)
             with self._condition:
                 if self._stop_requested:
                     raise _Canceled()
                 self._data.update(state="FINISH", percent=100, executed_percent=100,
-                                  message="Dibujo terminado; el fin del movimiento fue confirmado por la impresora.")
+                                  ink_verified=False,
+                                  message="Recorrido enviado y señal final recibida. Revisa el papel: la A1 no detecta si la punta dejó tinta en todas las zonas.")
         except _Canceled:
             try:
                 if settled and z_up is not None and known_z is not None:

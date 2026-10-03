@@ -27,6 +27,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .brand strong { display: block; font-size: 17px; letter-spacing: .2px; color: var(--text); }
 .brand span { font-size: 12px; color: var(--muted); }
 #appVersion { display: block; margin-top: 3px; font-size: 10px; }
+.photo-mode { margin-top: 8px; }
+.photo-mode.on { color: var(--ink); border-color: var(--ink); background: #e8ebf8; }
 .top-actions { display: flex; gap: 8px; align-items: center; }
 
 .btn { border: 1px solid var(--line); background: var(--surface); padding: 7px 14px; border-radius: 8px; cursor: pointer; white-space: nowrap; }

@@ -92,6 +92,7 @@
         <div class="seg image-modes" data-opt="image.mode">
           <button data-v="trazo">Una línea</button><button data-v="contornos">Sólo bordes</button><button data-v="boceto">Boceto</button><button data-v="rayado">Sombreado</button>
         </div>
+        <button class="btn wide photo-mode" type="button" data-photo-mode>Foto a líneas</button>
       </div>
       <p id="imageModeHint" class="hint" role="status"></p>
       <div id="imageSliders"></div>
@@ -126,6 +127,7 @@
         <button id="guide" class="btn ghost" type="button">Ubicar hoja…</button>
         <button id="level" class="btn ghost" type="button">Nivelar cama…</button>
         <button id="adjust" class="btn" type="button">Ajustar pluma…</button>
+        <button id="contactTest" class="btn ghost" type="button">Probar apoyo</button>
         <button id="movePrinter" class="btn" type="button">Mover A1…</button>
         <button id="simulate" class="btn ghost" type="button">Simular trazo</button>
         <button id="send" class="btn primary" type="button">Enviar a la impresora…</button>
@@ -181,7 +183,7 @@
       <p><b>3.</b> Si la A1 acepta y ejecuta el trabajo, llevará el soporte al centro de la hoja y se pondrá en pausa. Baja la pluma hasta que <b>toque la hoja</b>, apriétala y pulsa <b>Reanudar en esta app</b>.</p>
     </div>
     <div class="steps" id="stepsReady" hidden>
-      <p>Se dibuja sin volver a calibrar ni hacer la pausa de ajuste inicial. Úsalo sólo si acabas de hacer <b>Ajustar pluma</b> y desde entonces no has apagado la impresora ni movido el eje Z a mano. Si hay varios colores, se pausa para cambiar de pluma.</p>
+      <p>Se reutiliza la nivelación anterior y se activa su compensación si está habilitada en Ajustes, sin volver a sondear ni hacer homing. Úsalo si acabas de hacer <b>Ajustar pluma</b> y conservas la misma cama y referencia. Si sólo escribe delante o detrás, prepara <b>Probar apoyo</b> antes de repetir el dibujo.</p>
     </div>
     <div class="dlg-actions">
       <button class="btn ghost" value="cancel">Cancelar</button>

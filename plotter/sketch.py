@@ -120,6 +120,27 @@ def _centerlines(g, detail, ppm, threshold):
     return [pathops.simplify(_smooth(p), 0.6) for p in _trace(skeleton) if len(p) >= max(2, min_len)]
 
 
+def _photo_lines(g, detail, cleaning, ppm):
+    """Líneas de fotografía: conservar cambios de tono, sin rellenar sombras.
+
+    La reducción de textura respeta los bordes; el umbral se adapta al contraste
+    real. No convierte bloques oscuros en esqueletos que deformen los rasgos.
+    """
+    filtered = cv2.bilateralFilter(g, 9, 8 + 65 * cleaning, 3 + 6 * cleaning)
+    gx = cv2.Sobel(filtered, cv2.CV_32F, 1, 0, ksize=3)
+    gy = cv2.Sobel(filtered, cv2.CV_32F, 0, 1, ksize=3)
+    magnitude = cv2.magnitude(gx, gy)
+    gradients = magnitude[magnitude > 8]
+    if not gradients.size:
+        return []
+    high = float(np.clip(np.percentile(gradients, 80) * (1.25 - .8 * detail), 18, 220))
+    edges = cv2.Canny(filtered, high * .35, high, L2gradient=True)
+    edges = cv2.ximgproc.thinning(edges)
+    minimum = max(3, (.35 + .65 * (1 - detail)) * ppm)
+    return [pathops.simplify(_smooth(p, 3), .25 + .35 * cleaning)
+            for p in _trace(edges) if pathops.length(p) >= minimum]
+
+
 def _hatch_layer(dark, thr, angle, spacing, offset, ppm, rng):
     """Líneas paralelas donde la oscuridad supera thr, con pulso de lápiz."""
     H, W = dark.shape
@@ -214,7 +235,7 @@ def make_sketch(rgb, o, width_mm, pens=None, progress=None, cancelled=None):
     rng = np.random.default_rng(int(o.get("seed", 1)))
     mode = o.get("mode", "boceto")
     report(20, 'Convirtiendo la imagen en líneas…')
-    if mode not in ('boceto', 'contornos', 'rayado', 'trazo'):
+    if mode not in ('boceto', 'contornos', 'rayado', 'trazo', 'fotolinea'):
         raise ValueError('Elige un estilo de dibujo válido.')
     lines = _contours(g, float(o.get("detail", 55)) / 100.0, ppm) if mode in ("boceto", "contornos") else []
     if mode == 'trazo':
@@ -222,6 +243,11 @@ def make_sketch(rgb, o, width_mm, pens=None, progress=None, cancelled=None):
         if not math.isfinite(threshold) or not 1 <= threshold <= 254:
             raise ValueError('El umbral del trazo debe estar entre 1 y 254.')
         lines = _centerlines(g, float(o.get('detail', 55)) / 100.0, ppm, threshold)
+    if mode == 'fotolinea':
+        detail, cleaning = float(o.get('detail', 65)), float(o.get('photo_cleaning', 65))
+        if not np.isfinite([detail, cleaning]).all() or not 0 <= min(detail, cleaning) <= max(detail, cleaning) <= 100:
+            raise ValueError('El detalle y la limpieza de fotografía deben estar entre 0 y 100.')
+        lines = _photo_lines(g, detail / 100, cleaning / 100, ppm)
     layers = {}
     if not pens or len(pens) < 2:
         report(40, 'Preparando los trazos y las sombras…')

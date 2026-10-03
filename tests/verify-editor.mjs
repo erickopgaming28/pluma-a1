@@ -33,7 +33,7 @@ try {
     const canceled = [];
     function convert(body) {
       conversions.push(body);
-      const sample = structuredClone(body.type === 'image' ? imageFixtures[(body.opts.mode || 'boceto') + '-' + (body.opts.crop?.w === .5 ? 'middle' : 'full')] : fixture.text);
+      const sample = structuredClone(body.type === 'image' ? imageFixtures[(body.opts.mode === 'fotolinea' ? 'contornos' : body.opts.mode || 'boceto') + '-' + (body.opts.crop?.w === .5 ? 'middle' : 'full')] : fixture.text);
       const ratio = body.w / sample.w;
       if (body.type === 'image') {
         sample.h *= ratio;
@@ -48,7 +48,11 @@ try {
       const url = new URL(route.request().url());
       const endpoint = url.pathname;
       let data;
-      if (endpoint === '/api/state') data = { ...fixture.state, app_version: '2026.10.03.12', features: { async_images: true } };
+      if (endpoint === '/api/state') data = { ...fixture.state, app_version: '2026.10.03.13', features: { async_images: true } };
+      else if (endpoint === '/api/contact-test') {
+        data = { ...structuredClone(fixture.job), contact_test: true };
+        data.pages[0].layers[0].paths = [[20, 20, 26, 20], [23, 17, 23, 23]];
+      }
       else if (endpoint === '/api/printer/status') data = { configured: false, connected: false, state: 'IDLE', local_job: { active: false } };
       else if (endpoint === '/api/element') {
         const body = route.request().postDataJSON();
@@ -198,7 +202,22 @@ try {
     assert.ok(canceled.includes(obsolete));
     assert.equal(conversions.at(-1).opts.mode, 'trazo');
     assert.ok(!compositions.at(-1).items.some(it => it.render_id === tasks.get(obsolete).result.render_id));
-    assert.equal(await page.locator('#appVersion').textContent(), 'Versión 2026.10.03.12');
+    assert.equal(await page.locator('#appVersion').textContent(), 'Versión 2026.10.03.13');
+    await page.locator('[data-photo-mode]').click();
+    await page.waitForFunction(() => !document.querySelector('#send').disabled && document.querySelector('#busy').hidden);
+    assert.equal(conversions.at(-1).opts.mode, 'fotolinea');
+    assert.equal(await page.locator('[data-photo-mode]').getAttribute('aria-pressed'), 'true');
+    assert.ok(await page.locator('[data-k="photo_cleaning"]').isVisible());
+    assert.ok(!await page.locator('[data-k="threshold"]').isVisible());
+    assert.ok(!await page.locator('[data-k="hatch_spacing"]').isVisible());
+    await page.screenshot({ path: path.join(root, 'tests/artifacts/foto-lineas-' + name + '.png'), fullPage: name === 'movil' });
+    const designBefore = await page.evaluate(() => JSON.parse(localStorage.getItem('pluma-a1')).elements);
+    await page.locator('#contactTest').click();
+    await page.waitForFunction(() => document.querySelector('#contactTest').textContent === 'Volver al diseño');
+    assert.equal(await page.locator('#contactTest').textContent(), 'Volver al diseño');
+    await page.locator('#contactTest').click();
+    await page.waitForFunction(() => !document.querySelector('#send').disabled);
+    assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('pluma-a1')).elements), designBefore);
     assert.deepEqual(errors, []);
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
     console.log(name + ': rotación, medidas, recorte, estilos, guardado y conversión con progreso/cancelación verificados; sin impresora.');

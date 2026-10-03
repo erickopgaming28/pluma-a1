@@ -22,7 +22,7 @@ from plotter import fonts, gcode, handwriting, pathops, printer, sketch, stream,
 ROOT = Path(__file__).resolve().parent
 CONFIG_FILE = ROOT / "config.json"
 PORT = 8765
-APP_VERSION = '2026.10.03.12'
+APP_VERSION = '2026.10.03.13'
 WORKSPACE_ID = str(uuid.uuid5(uuid.NAMESPACE_URL, str(ROOT).casefold()))
 
 DEFAULT_CONFIG = {
@@ -397,6 +397,20 @@ def api_calibration():
         a([[cx - 5, cy - 5], [cx + 5, cy - 5], [cx + 5, cy + 5], [cx - 5, cy + 5], [cx - 5, cy - 5]]),
     ]
     return jsonify(make_job([{0: paths}], "calibracion"))
+
+
+@app.post('/api/contact-test')
+def api_contact_test():
+    """Prepara nueve cruces; no conecta ni mueve la impresora."""
+    x0, y0, x1, y1 = gcode.drawable(config)
+    inset = min(10., (x1 - x0) / 4, (y1 - y0) / 4)
+    radius = min(3., inset / 2)
+    paths = []
+    for y in np.linspace(y0 + inset, y1 - inset, 3):
+        for x in np.linspace(x0 + inset, x1 - inset, 3):
+            paths.extend([np.array([[x - radius, y], [x + radius, y]]),
+                          np.array([[x, y - radius], [x, y + radius]])])
+    return jsonify(make_job([{0: paths}], 'prueba_apoyo_9_zonas'))
 
 
 def _build(job_id, page, layer, pen_ready=False):

@@ -239,6 +239,8 @@ def _start(title, total, n_layers, pen_ready=False, cfg=None):
         "M17 ; activar motores con sus valores predeterminados",
         *home,
         "G90",
+        *(["G29.2 S1 ; reactivar compensacion guardada, sin volver a sondear"]
+          if pen_ready and (cfg or {}).get('pen', {}).get('level_bed', True) else []),
     ]
 
 
@@ -267,12 +269,9 @@ def build_adjust_gcode(cfg):
     _, ph = paper_dims(paper)
     g = _start("ajustar pluma", 150, 1, cfg=cfg)
     if pen.get("level_bed", True):
-        # nivela toda la zona útil: los dibujos siguientes reutilizan esta medición
-        x0, y0, x1, y1 = drawable(cfg)
-        bx, by = float(paper["bed_x"]), float(paper["bed_y"])
-        ox, oy = float(pen["offset_x"]), float(pen["offset_y"])
-        lim = lambda v: min(max(v, 0.0), BED)
-        g += _level(lim(bx + x0 - ox), lim(by + ph - y1 - oy), lim(bx + x1 - ox), lim(by + ph - y0 - oy))
+        # La punta está desplazada respecto a la boquilla: sondear toda la cama
+        # permite reutilizar la malla en ambas zonas al cambiar el diseño.
+        g += _level(0, 0, BED, BED)
     g += _pen_stop(cfg, "baja la pluma hasta tocar la hoja, apriétala y pulsa Reanudar")
     return "\n".join(g + ["", "G1 Z40 F1200 ; levanta la pluma", "M400", "M73 P100 R0", '; EXECUTABLE_BLOCK_END', ""])
 
@@ -284,9 +283,10 @@ def _level(x0, y0, x1, y1):
     return [
         "G1 Z5 F1200",
         "G1 X0 Y0 F12000",
-        "G29.2 S1 ; compensacion de cama activada",
+        "G29.2 S1 ; activar compensacion antes del sondeo, como en el perfil A1",
         f"G29 A1 X{x0:.1f} Y{y0:.1f} I{w:.1f} J{h:.1f}",
         "M400",
+        "G29.2 S1 ; compensacion de cama activada despues del sondeo",
     ]
 
 
@@ -396,7 +396,9 @@ def build_gcode(layers, cfg, title="dibujo", pen_ready=False):
         total += 75
     g = _start(title, total, len(conv), pen_ready, cfg)
     if level:
-        lo, hi = np.clip(allp.min(0), 0, BED), np.clip(allp.max(0), 0, BED)
+        # Incluir tanto el recorrido de la boquilla como el de la punta.
+        measured_area = np.vstack([allp, allp + [ox, oy]])
+        lo, hi = np.clip(measured_area.min(0), 0, BED), np.clip(measured_area.max(0), 0, BED)
         g += _level(lo[0], lo[1], hi[0], hi[1])
 
     done, next_mark = 0.0, 2.0

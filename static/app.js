@@ -16,6 +16,7 @@ const SLIDERS = {
   image: [
     { k: 'detail', label: 'Detalle de los contornos', min: 0, max: 100, step: 1, unit: ' %' },
     { k: 'threshold', label: 'Oscuridad que se conserva', min: 40, max: 240, step: 1, unit: '' },
+    { k: 'photo_cleaning', label: 'Limpieza de textura en la foto', min: 0, max: 100, step: 1, unit: ' %' },
     { k: 'shade', label: 'Cantidad de sombreado', min: 0, max: 100, step: 1, unit: ' %' },
     { k: 'hatch_spacing', label: 'Separación del rayado', min: 0.6, max: 3, step: 0.1, unit: ' mm' },
     { k: 'hatch_angle', label: 'Ángulo del rayado', min: 0, max: 180, step: 5, unit: '°' },
@@ -25,7 +26,7 @@ const SLIDERS = {
 };
 const DEFAULTS = {
   text: { font: 'EMSAllure', size: 9, line_spacing: 1.15, letter_spacing: 0, slant: 0, human: 55, align: 'left', join: true, seed: 1 },
-  image: { mode: 'trazo', detail: 55, threshold: 160, shade: 50, hatch_spacing: 1.2, hatch_angle: 45, brightness: 0, contrast: 0, cross: true, invert: false, seed: 1 },
+  image: { mode: 'trazo', detail: 55, threshold: 160, photo_cleaning: 65, shade: 50, hatch_spacing: 1.2, hatch_angle: 45, brightness: 0, contrast: 0, cross: true, invert: false, seed: 1 },
 };
 const SAMPLE = 'Querida Sofía:\n\nTe escribo esta carta sin tocar la pluma: la sostiene mi impresora 3D. ¿Verdad que parece letra de verdad?\n\nUn abrazo,\nErick';
 
@@ -95,6 +96,9 @@ function box(el) {
 }
 
 function select(id) {
+  if (id !== null && R.over?.contact_test) {
+    R.over = null; $('#contactTest').textContent = 'Probar apoyo'; compose();
+  }
   S.sel = id;
   persist();
   syncPanel();
@@ -292,15 +296,18 @@ function paintImageOptions(el) {
     trazo: 'Una línea por el centro de cada trazo oscuro, sin contorno, relleno ni sombreado. Ideal para dibujos y letras sobre fondo claro. Las partes separadas o ramificadas pueden necesitar varias levantadas.',
     contornos: 'Dibuja los bordes de las formas, sin sombrear. Una línea gruesa puede tener dos bordes.',
     boceto: 'Combina contornos y rayado para representar las sombras.',
-    rayado: 'Representa las sombras con líneas paralelas, sin contornos.'
+    rayado: 'Representa las sombras con líneas paralelas, sin contornos.',
+    fotolinea: 'Para fotografías y retratos: conserva cambios de tono como líneas, sin relleno ni rayado. Sube el detalle para recuperar rasgos; aumenta la limpieza para reducir textura. Recorta el fondo si distrae. Una línea sirve para dibujos que ya son de líneas.'
   }[mode] || '';
   for (const input of $$('#imageSliders input')) {
     const key = input.dataset.k;
-    input.closest('label').hidden = key === 'threshold' ? mode !== 'trazo'
+    input.closest('label').hidden = key === 'threshold' ? mode !== 'trazo' : key === 'photo_cleaning' ? mode !== 'fotolinea'
       : ['shade', 'hatch_spacing', 'hatch_angle'].includes(key) ? !hatch : key === 'detail' && mode === 'rayado';
     if (key === 'detail') input.previousElementSibling.firstChild.textContent = mode === 'trazo' ? 'Detalle de la línea' : 'Detalle de los contornos';
   }
   $('input[data-opt="image.cross"]').closest('label').hidden = !hatch;
+  $('[data-photo-mode]').classList.toggle('on', mode === 'fotolinea');
+  $('[data-photo-mode]').setAttribute('aria-pressed', mode === 'fotolinea');
   $('#restoreCrop').disabled = !el.opts.crop;
   $('#cropSummary').textContent = el.opts.crop ? `Recorte: ${(el.opts.crop.w * 100).toFixed(1)} % del ancho × ${(el.opts.crop.h * 100).toFixed(1)} % del alto original.` : 'Se usa la imagen completa.';
 }
@@ -991,6 +998,20 @@ async function init() {
   });
   $('#penReady').addEventListener('change', paintSendSteps);
   $('#adjust').addEventListener('click', () => { operationError('#adjustError'); $('#adjustDlg').showModal(); });
+  $('[data-photo-mode]').addEventListener('click', () => {
+    setOpt('image', 'mode', 'fotolinea'); syncPanel();
+  });
+  $('#contactTest').addEventListener('click', async () => {
+    try {
+      if (R.over?.contact_test) {
+        R.over = null; select(S.elements[0]?.id ?? null); compose(); draw();
+        $('#contactTest').textContent = 'Probar apoyo'; return;
+      }
+      showJob({ ...await api('/api/contact-test', {}), contact_test: true });
+      $('#contactTest').textContent = 'Volver al diseño';
+      toast('Prueba preparada: envía las 9 cruces y compara las filas trasera, central y frontal. Deben marcar por igual. Tu diseño sigue guardado.');
+    } catch (e) { toast(e.message, true); }
+  });
   $('#doAdjust').addEventListener('click', async e => {
     const btn = e.target; btn.disabled = true; btn.textContent = 'Enviando…';
     operationError('#adjustError');

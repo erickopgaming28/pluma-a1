@@ -1,5 +1,17 @@
 # Pluma A1 · puesta en marcha
 
+## Actualización: apoyo de la punta y fotografías (3 de octubre de 2026)
+
+La versión **2026.10.03.13** responde a un dibujo real que dejó zonas muy tenues: el usuario observó que la parte trasera no escribía como la frontal. Ese síntoma es compatible con pérdida de contacto, pero la foto no permite certificar su causa. El programa anterior no activaba explícitamente la compensación al reutilizar «pluma ya ajustada»; ahora envía `G29.2 S1` en ese modo si la nivelación está habilitada. También se activa **después** de `G29` y su barrera, siguiendo el uso del [perfil oficial de la A1](https://github.com/bambulab/BambuStudio/blob/master/resources/profiles/BBL/machine/Bambu%20Lab%20A1%200.4%20nozzle%20template%20machine_start_gcode.json). Ajustar pluma sondea toda la cama; un dibujo que sondea su propia zona incluye las posiciones de boquilla y punta.
+
+Para comprobarlo: retira o levanta la punta para **Ajustar pluma**, colócala tocando la hoja en la pausa y termina el ajuste. Pulsa **Probar apoyo** para preparar nueve cruces; el botón no mueve la A1. Envíalas desde el diálogo habitual con la pluma ya ajustada. Compara las filas trasera, central y frontal: deben dejar tinta similar. **Volver al diseño** recupera la composición conservada. Si siguen faltando cruces, revisa apoyo de la hoja, altura, rigidez del soporte, recorrido del resorte y estado de la punta. No se aumenta presión automáticamente ni se afirma que activar la malla resuelva todo: su referencia es la boquilla y la punta está desplazada.
+
+**Foto a líneas** conserva límites entre tonos de fotografías y retratos sin relleno ni rayado. Usa un filtro que conserva bordes, umbrales ajustados al contraste real y permite trazos cortos para rasgos pequeños. **Detalle** recupera más líneas; **Limpieza de textura** reduce ruido. Recorta fondos que distraigan. **Una línea** conserva su función para dibujos de líneas oscuras sobre fondo claro; umbralizar una foto puede unir zonas oscuras y deformar sus rasgos. No se reconstruyen detalles ausentes en el original.
+
+El final ya no dice «dibujo terminado». Dice que se envió el recorrido y se recibió la señal final, y pide revisar la tinta. La A1 no mide el contacto de la pluma. La señal final usa 204/205, separados de los checkpoints 200/201; los valores altos tienen [evidencia empírica en A1 mini](https://github.com/sksat/bambu-rs/blob/main/docs/plate-changer.md), y no una garantía universal del fabricante. Se mantiene la barrera final y no se repiten movimientos inciertos.
+
+Verificación: 84 pruebas sin impresora, incluida cobertura de malla con desplazamiento, activación en modo ajustado, nueve zonas, rasgos interiores entre tonos, reducción de ruido, recorte, multicolor y rechazo de un checkpoint retrasado como señal final. QA de escritorio/móvil de Foto a líneas y preparación/retorno de prueba de apoyo. Falta comprobar uniformidad física con las nueve cruces en esta A1.
+
 ## Actualización: imágenes grandes (3 de octubre de 2026)
 
 La versión **2026.10.03.12** prepara las imágenes sin mantener una solicitud abierta durante toda la conversión. Muestra la etapa actual y descarta preparaciones anteriores si cambias un ajuste. Un solo trabajador evita acumular conversiones simultáneas; la ordenación espacial conserva los mismos trazos y sus extremos. La vista previa reutiliza el recorrido al mover o girar elementos.
