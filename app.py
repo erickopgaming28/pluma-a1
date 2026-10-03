@@ -17,12 +17,12 @@ import numpy as np
 from flask import Flask, jsonify, request, send_file
 from werkzeug.serving import ThreadedWSGIServer
 
-from plotter import fonts, gcode, handwriting, pathops, printer, sketch, stream
+from plotter import fonts, gcode, handwriting, pathops, printer, sketch, stream, conversion
 
 ROOT = Path(__file__).resolve().parent
 CONFIG_FILE = ROOT / "config.json"
 PORT = 8765
-APP_VERSION = '2026.10.03.11'
+APP_VERSION = '2026.10.03.12'
 WORKSPACE_ID = str(uuid.uuid5(uuid.NAMESPACE_URL, str(ROOT).casefold()))
 
 DEFAULT_CONFIG = {
@@ -46,6 +46,7 @@ dispatch_lock = threading.Lock()
 last_dispatch = {}
 link = printer.PrinterLink()
 direct_job = stream.DirectJob()
+image_conversions = conversion.ConversionQueue()
 direct_job_kind = ''
 stream_failure_cleared = False
 direct_command = {}
@@ -93,8 +94,9 @@ def geometry():
     return {"paper": gcode.paper_dims(config["paper"]), "reach": gcode.reach(config), "drawable": gcode.drawable(config)}
 
 
-def job_signature():
-    return json.dumps(dict({k: config[k] for k in ('paper', 'pen', 'pens')}, material=config['printer'].get('material', 'PLA')), sort_keys=True)
+def job_signature(cfg=None):
+    cfg = cfg if cfg is not None else config
+    return json.dumps(dict({k: cfg[k] for k in ('paper', 'pen', 'pens')}, material=cfg['printer'].get('material', 'PLA')), sort_keys=True)
 
 
 @app.before_request
@@ -105,8 +107,8 @@ def guard_origin():
             raise ValueError('Abre la app directamente desde su dirección local para realizar esta acción.')
 
 
-def pen_info(i):
-    pens = config["pens"]
+def pen_info(i, cfg=None):
+    pens = (config if cfg is None else cfg)["pens"]
     return pens[min(i, len(pens) - 1)]
 
 
@@ -180,6 +182,7 @@ def api_state():
     for fid, label in fonts.CATALOG:
         font_list.append({"id": fid, "label": label, "sample": font_sample(fonts.get_font(fid))})
     return jsonify({"config": public_config(), "fonts": font_list, "geometry": geometry(),
+                    'app_version': APP_VERSION, 'features': {'async_images': True},
                     "paper_sizes": gcode.PAPER_SIZES, "lan_url": lan_url()})
 
 
@@ -289,9 +292,34 @@ def api_image():
 def api_element():
     """Convierte un elemento (cuadro de texto o imagen) en trazos medidos desde su propia esquina,
     para que la interfaz pueda moverlo por la hoja sin volver a convertirlo."""
+    return jsonify(_convert_element(request.get_json(force=True)))
+
+
+@app.post('/api/element/tasks')
+def api_element_task():
     d = request.get_json(force=True)
+    if d.get('type') != 'image':
+        raise ValueError('La preparación en segundo plano es para imágenes.')
+    cfg = copy.deepcopy(config)
+    task = image_conversions.start(lambda progress, cancelled: _convert_element(d, cfg, progress, cancelled))
+    return jsonify(task=task), 202
+
+
+@app.get('/api/element/tasks/<task_id>')
+def api_element_task_status(task_id):
+    return jsonify(image_conversions.snapshot(task_id))
+
+
+@app.post('/api/element/tasks/<task_id>/cancel')
+def api_element_task_cancel(task_id):
+    return jsonify(image_conversions.cancel(task_id))
+
+
+def _convert_element(d, cfg=None, progress=None, cancelled=None):
+    cfg = copy.deepcopy(config) if cfg is None else cfg
     o = d.get("opts", {})
-    _, _, area_w, _ = _area()
+    x0, _, x1, _ = gcode.drawable(cfg)
+    area_w = x1 - x0
     multi = d.get("color_mode") == "multi"
     pen = int(d.get("pen", 0))
     w = min(max(float(d.get("w") or area_w), 15.0), 400.0)
@@ -299,25 +327,26 @@ def api_element():
         item = images.get(d.get("image"))
         if not item:
             raise ValueError("Vuelve a cargar la imagen.")
-        layers, h = sketch.make_sketch(item["rgb"], o, w, [p["color"] for p in config["pens"]] if multi else None)
+        layers, h = sketch.make_sketch(item["rgb"], o, w, [p["color"] for p in cfg["pens"]] if multi else None,
+                                      progress=progress, cancelled=cancelled)
         if not multi:
             layers = {pen: v for v in layers.values()}
     else:
         font = fonts.get_font(o.get("font"))
         # sin límite de alto: el cuadro crece hacia abajo con el texto
         layers = handwriting.render_text(d.get("text", ""), font, o, w, 1e6,
-                                         n_pens=len(config["pens"]) if multi else 1, pen=0 if multi else pen)[0]
+                                         n_pens=len(cfg["pens"]) if multi else 1, pen=0 if multi else pen)[0]
         size = float(o.get("size", 8))
         h = max([float(p[:, 1].max()) for v in layers.values() for p in v] + [size]) + 0.2 * size
     render_id = uuid.uuid4().hex
-    renders[render_id] = {'layers': layers, 'signature': job_signature(), 'w': w, 'h': h}
+    renders[render_id] = {'layers': layers, 'signature': job_signature(cfg), 'w': w, 'h': h}
     while len(renders) > 60:
         renders.pop(next(iter(renders)))
     view = []
     for i in sorted(layers):
-        info = pen_info(i)
+        info = pen_info(i, cfg)
         view.append({"pen": i, "name": info["name"], "color": info["color"], "paths": pathops.to_flat(layers[i])})
-    return jsonify({"w": w, "h": h, "layers": view, "render_id": render_id})
+    return {"w": w, "h": h, "layers": view, "render_id": render_id}
 
 
 @app.post("/api/compose")

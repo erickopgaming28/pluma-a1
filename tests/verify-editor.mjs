@@ -29,26 +29,42 @@ try {
     const page = await context.newPage();
     const errors = [], compositions = [], conversions = [];
     page.on('pageerror', e => errors.push(e.message));
-    let rendered = new Map();
+    let rendered = new Map(), tasks = new Map(), slowNext = false, taskNumber = 0;
+    const canceled = [];
+    function convert(body) {
+      conversions.push(body);
+      const sample = structuredClone(body.type === 'image' ? imageFixtures[(body.opts.mode || 'boceto') + '-' + (body.opts.crop?.w === .5 ? 'middle' : 'full')] : fixture.text);
+      const ratio = body.w / sample.w;
+      if (body.type === 'image') {
+        sample.h *= ratio;
+        for (const l of sample.layers) l.paths = l.paths.map(p => p.map(v => v * ratio));
+      }
+      sample.w = body.w;
+      sample.render_id += '-' + body.id + '-' + taskNumber;
+      rendered.set(sample.render_id, sample);
+      return sample;
+    }
     await page.route('**/*', async route => {
       const url = new URL(route.request().url());
       const endpoint = url.pathname;
       let data;
-      if (endpoint === '/api/state') data = fixture.state;
+      if (endpoint === '/api/state') data = { ...fixture.state, app_version: '2026.10.03.12', features: { async_images: true } };
       else if (endpoint === '/api/printer/status') data = { configured: false, connected: false, state: 'IDLE', local_job: { active: false } };
       else if (endpoint === '/api/element') {
         const body = route.request().postDataJSON();
-        conversions.push(body);
-        const sample = structuredClone(body.type === 'image' ? imageFixtures[(body.opts.mode || 'boceto') + '-' + (body.opts.crop?.w === .5 ? 'middle' : 'full')] : fixture.text);
-        const ratio = body.w / sample.w;
-        if (body.type === 'image') {
-          sample.h *= ratio;
-          for (const l of sample.layers) l.paths = l.paths.map(p => p.map(v => v * ratio));
-        }
-        sample.w = body.w;
-        sample.render_id += '-' + body.id;
-        rendered.set(sample.render_id, sample);
-        data = sample;
+        data = convert(body);
+      } else if (endpoint === '/api/element/tasks') {
+        const token = 'task-' + ++taskNumber;
+        tasks.set(token, { result: convert(route.request().postDataJSON()), remaining: slowNext ? 100 : 0 });
+        slowNext = false;
+        return route.fulfill({ status: 202, json: { task: token } });
+      } else if (endpoint.startsWith('/api/element/tasks/')) {
+        const token = endpoint.split('/')[4], task = tasks.get(token);
+        if (endpoint.endsWith('/cancel')) {
+          canceled.push(token); task.canceled = true; data = { state: 'canceled' };
+        } else data = task.canceled ? { state: 'canceled' } : task.remaining-- > 0
+          ? { state: 'running', message: 'Ordenando los trazos de la imagen…' }
+          : { state: 'done', result: task.result };
       } else if (endpoint === '/api/compose') {
         const body = route.request().postDataJSON(); compositions.push(body);
         data = structuredClone(fixture.job);
@@ -171,9 +187,21 @@ try {
     await page.locator('#restoreCrop').click(); await page.waitForTimeout(300);
     assert.equal(conversions.at(-1).opts.crop, undefined);
     assert.ok(await page.locator('#restoreCrop').isDisabled());
+    // Changing an option cancels a large conversion; only the newest result is composed.
+    slowNext = true;
+    await page.locator('[data-opt="image.mode"] [data-v="contornos"]').click();
+    await page.waitForFunction(() => document.querySelector('#busy').textContent.includes('Ordenando'));
+    assert.ok(await page.locator('#busy').isVisible());
+    const obsolete = 'task-' + taskNumber;
+    await page.locator('[data-opt="image.mode"] [data-v="trazo"]').click();
+    await page.waitForFunction(() => !document.querySelector('#send').disabled && document.querySelector('#busy').hidden);
+    assert.ok(canceled.includes(obsolete));
+    assert.equal(conversions.at(-1).opts.mode, 'trazo');
+    assert.ok(!compositions.at(-1).items.some(it => it.render_id === tasks.get(obsolete).result.render_id));
+    assert.equal(await page.locator('#appVersion').textContent(), 'Versión 2026.10.03.12');
     assert.deepEqual(errors, []);
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
-    console.log(name + ': rotación, medidas, recorte con ratón/teclado, estilos, guardado y restauración verificados; sin impresora.');
+    console.log(name + ': rotación, medidas, recorte, estilos, guardado y conversión con progreso/cancelación verificados; sin impresora.');
     await context.close();
   }
 } finally { await browser.close(); }

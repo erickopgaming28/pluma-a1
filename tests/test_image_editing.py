@@ -1,6 +1,7 @@
 import copy
 import io
 import unittest
+import time
 
 import numpy as np
 from PIL import Image
@@ -99,6 +100,25 @@ class ImageEditingTests(unittest.TestCase):
         self.assertEqual(response.mimetype, 'image/png')
         np.testing.assert_array_equal(np.asarray(Image.open(io.BytesIO(response.data))), self.rgb)
         self.assertEqual(self.client.get('/api/image/missing/preview').status_code, 404)
+
+    def test_async_conversion_returns_real_geometry_and_exposes_errors(self):
+        for image, expected in ((self.image_id, 'done'), ('missing', 'failed')):
+            response = self.client.post('/api/element/tasks', json={'type': 'image', 'image': image,
+                'w': 80, 'opts': {'mode': 'trazo', 'crop': {'x': 0, 'y': .2, 'w': .5, 'h': .6}}})
+            self.assertEqual(response.status_code, 202)
+            token = response.json['task']
+            end = time.monotonic() + 3
+            while time.monotonic() < end:
+                data = self.client.get('/api/element/tasks/' + token).json
+                if data['state'] in ('done', 'failed'):
+                    break
+                time.sleep(.005)
+            self.assertEqual(data['state'], expected)
+            if expected == 'done':
+                self.assertEqual(data['result']['h'], 48)
+                self.assertIn(data['result']['render_id'], server.renders)
+            else:
+                self.assertIn('cargar', data['message'])
 
     def test_multicolor_central_stroke_uses_darkest_pen_without_hatching(self):
         mono, _ = sketch.make_sketch(self.rgb, {'mode': 'trazo'}, 100)

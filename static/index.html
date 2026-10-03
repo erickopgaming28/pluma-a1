@@ -14,7 +14,7 @@
 <header class="top">
   <div class="brand">
     <svg viewBox="0 0 32 32" width="28" height="28" aria-hidden="true"><path d="M5 27c6-1 9-6 12-11s5-9 10-11c-1 6-4 9-9 12s-9 5-13 10z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M5 27l7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-    <div><strong>Pluma A1</strong><span>Escribe y dibuja con tu Bambu Lab A1</span></div>
+    <div><strong>Pluma A1</strong><span>Escribe y dibuja con tu Bambu Lab A1</span><span id="appVersion"></span></div>
   </div>
   <div class="top-actions">
     <button id="printerPill" class="pill" type="button"><i class="dot"></i><span>Impresora sin configurar</span></button>
@@ -119,7 +119,7 @@
   <section class="stage">
     <div class="workflow"><span>Crear el diseño</span><span>Ajustar hoja y pluma</span><span>Revisar y enviar</span></div>
     <div id="banner" class="banner" hidden></div>
-    <div class="canvas-wrap"><canvas id="cv"></canvas><div id="busy" class="busy" hidden>Convirtiendo…</div></div>
+    <div class="canvas-wrap"><canvas id="cv"></canvas><div id="busy" class="busy" role="status" hidden>Convirtiendo…</div></div>
     <footer class="bar">
       <div id="stats" class="stats">—</div>
       <div class="bar-actions">

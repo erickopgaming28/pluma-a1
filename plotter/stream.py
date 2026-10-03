@@ -18,6 +18,7 @@ MAX_BYTES = 512
 MAX_LINES = 24
 MAX_BLOCK_SECONDS = 20.0
 MAX_GROUP_PACKETS = 4
+LOOKAHEAD_SECONDS = 12.0
 _BARRIER_SIZE = len("M400\nM1002 gcode_claim_action : 200\n".encode("ascii"))
 _NUMBER = r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)"
 _COMMAND = re.compile(r"^(G(?:0|1|28|29(?:\.2)?)|M(?:104|140|106|83|220|17|204|400|73))(?:\s|$)")
@@ -284,12 +285,19 @@ class DirectJob:
     Nunca reintenta un movimiento cuando falta su ACK o su marcador de ejecución.
     """
 
-    def __init__(self, block_timeout=45.0, long_timeout=180.0, poll_interval=0.05):
+    def __init__(self, block_timeout=45.0, long_timeout=180.0, poll_interval=0.05,
+                 lookahead_seconds=LOOKAHEAD_SECONDS, clock=None):
         self.block_timeout = min(45.0, float(block_timeout))
         self.long_timeout = min(180.0, float(long_timeout))
         self.poll_interval = max(0.001, float(poll_interval))
         if self.block_timeout <= 0 or self.long_timeout <= 0:
             raise ValueError("El tiempo de espera debe ser positivo.")
+        self.lookahead_seconds = float(lookahead_seconds)
+        if not math.isfinite(self.lookahead_seconds) or not 0 < self.lookahead_seconds <= 60:
+            raise ValueError('El adelanto de envío debe estar entre 0 y 60 segundos.')
+        self._clock = clock or time.monotonic
+        self._buffer_until = 0.0
+        self._continuous = False
         self._condition = threading.Condition()
         self._active = False
         self._pause_requested = False
@@ -305,7 +313,8 @@ class DirectJob:
 
     def snapshot(self):
         with self._condition:
-            return dict(self._data, active=self._active)
+            return dict(self._data, active=self._active,
+                        queued_seconds=round(max(0.0, self._buffer_until - self._clock()), 1))
 
     def start(self, text, title, link, z_up=None, continuous=False):
         events, total = compile_program(text)
@@ -322,6 +331,7 @@ class DirectJob:
                 raise ValueError("Ya hay un dibujo directo activo.")
             self._active = True
             self._continuous = continuous
+            self._buffer_until = self._clock()
             self._pause_requested = self._stop_requested = False
             self._pause_message = ""
             self._data = {"state": "PREPARE", "percent": 0, "executed_percent": 0, "continuous": continuous,
@@ -339,13 +349,13 @@ class DirectJob:
             if action == "stop":
                 self._stop_requested = True
                 self._pause_requested = False
-                self._data.update(state="STOPPING", message="Cancelación solicitada; el bloque enviado puede terminar antes de detenerse.")
+                self._data.update(state="STOPPING", message="Cancelación solicitada; esperando a que termine el recorrido ya aceptado por la A1.")
             elif action == "pause":
                 if self._stop_requested:
                     raise ValueError("La cancelación ya está en curso.")
                 self._pause_requested = True
                 self._pause_message = "Dibujo en pausa. Pulsa Reanudar para continuar."
-                self._data["message"] = "Pausa solicitada; espera a que termine el bloque enviado."
+                self._data["message"] = "Pausa solicitada; espera a que termine el recorrido ya aceptado por la A1."
             elif not self._stop_requested:
                 self._pause_requested = False
                 self._pause_message = ""
@@ -374,20 +384,54 @@ class DirectJob:
                 self._data.update(state="PAUSE", message=self._pause_message or "Pulsa Reanudar para continuar.")
                 self._condition.wait(self.poll_interval)
 
-    def _send_payload(self, payload, link, key):
+    @staticmethod
+    def _buffer_cost(block):
+        # Presupuesto de alimentación, no prueba de movimiento físico.
+        # Los segmentos cortos requieren margen para aceleración y procesado.
+        moves = sum(line.split()[0] in ('G0', 'G1') for line in block.lines)
+        return max(block.seconds * 1.5, block.seconds + moves * 0.025)
+
+    def _pace(self, block, link, key):
+        """Alimenta una ventana corta sin insertar M400 entre grupos normales."""
+        # Un paquete largo puede superar la ventana: se admite con reserva,
+        # sin esperar a vaciarla y provocar otra parada entre trazos.
+        allowance = max(self.lookahead_seconds * .25,
+                        self.lookahead_seconds - self._buffer_cost(block))
+        while self._buffer_until - self._clock() > allowance:
+            self._health(link, key)
+            with self._condition:
+                if self._pause_requested or self._stop_requested:
+                    return False
+                self._data.update(state='RUNNING', phase='feeding', message='Dibujando; alimentando el recorrido continuo sin adelantar toda la imagen.')
+                self._condition.wait(min(self.poll_interval, max(0.001, self._buffer_until - self._clock() - allowance)))
+        return True
+
+    def _send_payload(self, payload, link, key, cost=0.0):
         self._health(link, key)
-        ack = link.send_gcode(payload, wait=6)
+        sent_at = self._clock()
+        remaining = max(0.0, self._buffer_until - sent_at) if self._continuous else 0.0
+        # El firmware puede aplazar el ACK si su cola está ocupada. No reenviar.
+        ack = link.send_gcode(payload, wait=max(6.0, remaining + cost + 6.0) if self._continuous else 6.0)
         self._health(link, key)
         if not isinstance(ack, dict) or str(ack.get("result", "")).lower() != "success" or ack.get("err_code", 0) not in (0, "0", None):
             reason = ack.get("reason", "sin respuesta") if isinstance(ack, dict) else "sin respuesta"
             raise RuntimeError(f"La impresora no confirmó los comandos ({reason}). La ejecución quedó incierta; no se reintentó.")
+        if self._continuous:
+            self._buffer_until = max(self._buffer_until, sent_at) + cost
 
     def _send_block(self, block, link, key, marker, drain=True):
         version = link.stage_version
         barrier = ("M400",) if drain else ()
         payload = "\n".join((*block.lines, *barrier, f"M1002 gcode_claim_action : {marker}", ""))
-        self._send_payload(payload, link, key)
-        deadline = time.monotonic() + (self.long_timeout if block.long else self.block_timeout)
+        cost = self._buffer_cost(block) if self._continuous and not block.long else 0.0
+        self._send_payload(payload, link, key, cost)
+        remaining = max(0.0, self._buffer_until - self._clock()) if self._continuous else 0.0
+        timeout = self.long_timeout if block.long else self.block_timeout + remaining
+        deadline = self._clock() + timeout
+        with self._condition:
+            self._data['phase'] = 'waiting_finish' if drain else 'feeding'
+            if drain and self._continuous:
+                self._data['message'] = 'Esperando a que la A1 termine los movimientos aceptados y confirme el final.'
         next_push = 0.0
         while True:
             self._health(link, key)
@@ -396,8 +440,10 @@ class DirectJob:
             except (ValueError, TypeError):
                 matching = False
             if link.stage_version > version and matching:
+                if drain:
+                    self._buffer_until = self._clock()
                 return
-            now = time.monotonic()
+            now = self._clock()
             if now >= deadline:
                 raise RuntimeError("No llegó la confirmación de ejecución del bloque. Puede seguir en movimiento; no se enviaron más comandos.")
             if now >= next_push and callable(getattr(link, "request_status", None)):
@@ -420,6 +466,8 @@ class DirectJob:
             self._health(link, key)
             with self._condition:
                 interrupted = self._pause_requested or self._stop_requested
+            if not interrupted and self._continuous and not drain:
+                interrupted = not self._pace(block, link, key)
             if interrupted:
                 if accepted:
                     self._send_block(_Block(()), link, key, marker)
@@ -427,7 +475,8 @@ class DirectJob:
             if index == len(blocks) - 1:
                 self._send_block(block, link, key, marker, drain=drain)
             else:
-                self._send_payload("\n".join((*block.lines, "")), link, key)
+                self._send_payload("\n".join((*block.lines, "")), link, key,
+                                   self._buffer_cost(block) if self._continuous else 0.0)
             accepted.append(block)
         return tuple(accepted), drain
 
@@ -435,28 +484,22 @@ class DirectJob:
         completed = 0
         known_z = None  # inferencia de comandos confirmados, no posición medida
         settled = False
-        pending = []  # aceptados/procesados; su movimiento aún requiere M400
+        pending_lines = 0  # sólo resumen; no crece una lista con toda la imagen
+        accepted_z = None  # se convierte en known_z sólo después de M400
         executed = 0
 
         def credit_execution():
-            nonlocal known_z, executed, settled
-            for block in pending:
-                executed += len(block.lines)
-                for line in block.lines:
-                    if line.split()[0] in ('G28', 'G29'):
-                        known_z = None
-                    else:
-                        for token in line.split()[1:]:
-                            if token.startswith('Z'):
-                                known_z = float(token[1:])
-            pending.clear()
+            nonlocal known_z, executed, settled, pending_lines
+            executed += pending_lines
+            known_z = accepted_z
+            pending_lines = 0
             settled = True
             with self._condition:
                 self._data['executed_percent'] = min(99, int(executed * 100 / total))
 
         def drain_pending():
             nonlocal marker
-            if pending:
+            if pending_lines:
                 self._send_block(_Block(()), link, key, marker)
                 marker = 401 - marker
                 credit_execution()
@@ -495,7 +538,15 @@ class DirectJob:
                     if not accepted:
                         continue  # _gate procesa la solicitud antes de publicar
                     marker = 401 - marker
-                    pending.extend(accepted)
+                    for block in accepted:
+                        pending_lines += len(block.lines)
+                        for line in block.lines:
+                            if line.split()[0] in ('G28', 'G29'):
+                                accepted_z = None
+                            else:
+                                for token in line.split()[1:]:
+                                    if token.startswith('Z'):
+                                        accepted_z = float(token[1:])
                     settled = False
                     if drained:
                         credit_execution()
@@ -503,6 +554,7 @@ class DirectJob:
                     completed += sum(len(block.lines) for block in accepted)
                     with self._condition:
                         self._data["percent"] = min(99, int(completed * 100 / total))
+                        self._data.update(sent_lines=completed, total_lines=total)
                         if not self._stop_requested and not self._pause_requested:
                             self._data["message"] = ('Transmitiendo el recorrido continuo. El fin se confirma al terminar.'
                                                      if self._continuous and not drained else 'Grupo ejecutado y confirmado por la impresora.')

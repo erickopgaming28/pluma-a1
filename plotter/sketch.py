@@ -7,6 +7,7 @@ import numpy as np
 from PIL import Image, ImageOps
 
 from . import pathops
+from concurrent.futures import CancelledError
 
 WORK_SIDE = 1000  # lado mayor de la imagen de trabajo, en px
 _OFFS = [(0, 1), (1, 0), (0, -1), (-1, 0), (1, 1), (1, -1), (-1, 1), (-1, -1)]
@@ -181,10 +182,17 @@ def _hex_rgb(h):
     return [int(h[i:i + 2], 16) for i in (0, 2, 4)]
 
 
-def make_sketch(rgb, o, width_mm, pens=None):
+def make_sketch(rgb, o, width_mm, pens=None, progress=None, cancelled=None):
     """Devuelve ({pluma: trazos en mm, origen arriba-izquierda}, alto en mm).
 
     pens: lista de colores "#rrggbb" para separar la imagen por plumas; None = un solo color."""
+    def report(percent, message):
+        if cancelled and cancelled():
+            raise CancelledError()
+        if progress:
+            progress(percent, message)
+
+    report(5, 'Preparando el recorte y el tamaño de la imagen…')
     if not math.isfinite(width_mm) or width_mm <= 0:
         raise ValueError('El ancho del dibujo debe ser mayor que cero.')
     spacing = float(o.get('hatch_spacing', 1.2))
@@ -205,6 +213,7 @@ def make_sketch(rgb, o, width_mm, pens=None):
 
     rng = np.random.default_rng(int(o.get("seed", 1)))
     mode = o.get("mode", "boceto")
+    report(20, 'Convirtiendo la imagen en líneas…')
     if mode not in ('boceto', 'contornos', 'rayado', 'trazo'):
         raise ValueError('Elige un estilo de dibujo válido.')
     lines = _contours(g, float(o.get("detail", 55)) / 100.0, ppm) if mode in ("boceto", "contornos") else []
@@ -215,8 +224,10 @@ def make_sketch(rgb, o, width_mm, pens=None):
         lines = _centerlines(g, float(o.get('detail', 55)) / 100.0, ppm, threshold)
     layers = {}
     if not pens or len(pens) < 2:
+        report(40, 'Preparando los trazos y las sombras…')
         hatch = _hatch(1.0 - g / 255.0, o, ppm, rng) if mode in ("boceto", "rayado") else []
-        layers[0] = pathops.nn_order(hatch) + pathops.nn_order(lines)
+        report(65, 'Ordenando el recorrido de la pluma…')
+        layers[0] = pathops.nn_order(hatch, cancelled=cancelled) + pathops.nn_order(lines, cancelled=cancelled)
     else:
         # cada píxel se asigna a la pluma de color más parecido; la cantidad de tinta
         # es lo lejos que está del blanco del papel
@@ -227,8 +238,10 @@ def make_sketch(rgb, o, width_mm, pens=None):
         ink = 1.0 - img.min(2).astype(np.float32) / 255.0
         darkest = int(pal_lab[:, 0].argmin())  # los contornos van con la pluma más oscura
         for k in range(len(pens)):
+            report(40 + int(50 * k / len(pens)), f'Preparando los trazos del color {k + 1} de {len(pens)}…')
             hatch = _hatch(ink * (near == k), o, ppm, rng, turn=25.0 * k) if mode in ("boceto", "rayado") else []
-            paths = pathops.nn_order(hatch) + (pathops.nn_order(lines) if k == darkest else [])
+            paths = pathops.nn_order(hatch, cancelled=cancelled) + (pathops.nn_order(lines, cancelled=cancelled) if k == darkest else [])
             if paths:
                 layers[k] = paths
+    report(95, 'Preparando la vista previa…')
     return {k: [p / ppm for p in v] for k, v in layers.items()}, H / ppm

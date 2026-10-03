@@ -33,7 +33,7 @@ const SAMPLE = 'Querida Sofía:\n\nTe escribo esta carta sin tocar la pluma: la 
 const S = { elements: null, sel: null, nextId: 1 };
 // Estado de la sesión: conversiones, vista, trabajo compuesto, impresora.
 const R = { cfg: null, geo: null, rend: {}, seq: {}, thumbs: {}, view: null, job: null, over: null, dirty: false,
-            anim: null, sent: null, status: {}, penReady: false, fileTarget: 'sel' };
+            anim: null, sent: null, status: {}, penReady: false, fileTarget: 'sel', tasks: {}, asyncImages: false };
 
 let legacy = null;
 try {
@@ -107,6 +107,7 @@ const resizeCenters = {};
 function touch(el, now) {
   R.over = null;
   R.seq[el.id] = (R.seq[el.id] || 0) + 1;
+  if (R.tasks[el.id]) api(`/api/element/tasks/${R.tasks[el.id]}/cancel`, {}).catch(() => {});
   if (R.rend[el.id]) R.rend[el.id].pending = true;
   R.dirty = true;
   persist();
@@ -116,13 +117,35 @@ function touch(el, now) {
 }
 
 let busy = 0;
+async function convertImage(el, body, seq) {
+  const { task } = await api('/api/element/tasks', body);
+  const current = () => seq === R.seq[el.id] && S.elements.includes(el);
+  if (current()) R.tasks[el.id] = task;
+  try {
+    while (current()) {
+      const state = await api(`/api/element/tasks/${task}`);
+      if (!current()) return null;
+      if (state.state === 'done') return state.result;
+      if (state.state === 'failed') throw new Error(state.message || 'No se pudo preparar la imagen.');
+      if (state.state === 'canceled') return null;
+      if (S.sel === el.id && $('#busy').textContent !== state.message) $('#busy').textContent = state.message;
+      await new Promise(resolve => setTimeout(resolve, 250));
+    }
+    return null;
+  } finally {
+    if (!current()) api(`/api/element/tasks/${task}/cancel`, {}).catch(() => {});
+    if (R.tasks[el.id] === task) delete R.tasks[el.id];
+  }
+}
 async function renderEl(el) {
   const seq = R.seq[el.id] = (R.seq[el.id] || 0) + 1;
   $('#busy').hidden = !++busy;
+  $('#busy').textContent = el.type === 'image' ? 'Preparando la imagen…' : 'Convirtiendo el texto…';
   try {
-    const r = await api('/api/element', { id: el.id, type: el.type, text: el.text, image: el.imageId, opts: el.opts,
-                                          w: el.w, color_mode: el.colorMode, pen: el.pen });
-    if (seq === R.seq[el.id] && S.elements.includes(el)) {
+    const body = { id: el.id, type: el.type, text: el.text, image: el.imageId, opts: el.opts,
+                   w: el.w, color_mode: el.colorMode, pen: el.pen };
+    const r = el.type === 'image' && R.asyncImages ? await convertImage(el, body, seq) : await api('/api/element', body);
+    if (r && seq === R.seq[el.id] && S.elements.includes(el)) {
       R.rend[el.id] = r;
       if (resizeCenters[el.id]) {
         const [cx, cy] = resizeCenters[el.id];
@@ -302,6 +325,7 @@ function setGeometry(key, value) {
 
 /* ---------- la hoja: dibujo, arrastre y cambio de tamaño ---------- */
 const cv = $('#cv'), ctx = cv.getContext('2d');
+const previewPaths = new WeakMap();
 const HANDLE = 7;  // medio lado del tirador, en px de pantalla
 const angleOf = el => Number.isFinite(+el.rotation) ? normalizeAngle(+el.rotation) : 0;
 
@@ -383,6 +407,23 @@ function draw(limit = Infinity) {
     const px = (x, y) => X + (c * x - sn * y) * f;
     const py = (x, y) => Y + (sn * x + c * y) * f;
     ctx.strokeStyle = g.color;
+    if (limit === Infinity) {
+      let cached = previewPaths.get(g.paths);
+      if (!cached) {
+        cached = new Path2D();
+        for (const p of g.paths) {
+          if (p.length < 4) continue;
+          cached.moveTo(p[0], p[1]);
+          for (let i = 2; i < p.length; i += 2) cached.lineTo(p[i], p[i + 1]);
+        }
+        previewPaths.set(g.paths, cached);
+      }
+      ctx.save();
+      ctx.transform(c * f, sn * f, -sn * f, c * f, X, Y);
+      ctx.lineWidth /= f;
+      ctx.stroke(cached); ctx.restore();
+      continue;
+    }
     ctx.beginPath();
     for (const p of g.paths) {
       if (left <= 0) break;
@@ -827,6 +868,8 @@ async function saveConfig(data, quiet) {
 async function init() {
   const st = await api('/api/state');
   R.cfg = st.config; R.geo = st.geometry;
+  R.asyncImages = !!st.features?.async_images;
+  $('#appVersion').textContent = st.app_version ? `Versión ${st.app_version}` : 'Versión anterior: reinicia la terminal para cargar las mejoras';
   $('#lanUrl').textContent = st.lan_url || 'no disponible (sin red local)';
 
   if (!S.elements) {
@@ -873,6 +916,8 @@ async function init() {
   $('#delEl').addEventListener('click', () => {
     const el = sel(); if (!el) return;
     S.elements = S.elements.filter(e => e !== el);
+    ++R.seq[el.id];
+    if (R.tasks[el.id]) api(`/api/element/tasks/${R.tasks[el.id]}/cancel`, {}).catch(() => {});
     delete R.rend[el.id];
     R.over = null;
     select(null);

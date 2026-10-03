@@ -1,5 +1,7 @@
 """Operaciones sobre trazos (listas de arreglos Nx2 en mm)."""
 import cv2
+import heapq
+from concurrent.futures import CancelledError
 import numpy as np
 
 
@@ -27,16 +29,20 @@ def subdivide(p, max_seg):
     return np.vstack(out)
 
 
-def nn_order(paths, start=(0.0, 0.0)):
+def nn_order(paths, start=(0.0, 0.0), cancelled=None):
     """Ordena por vecino más cercano (invirtiendo trazos) para acortar los viajes."""
     n = len(paths)
     if n < 2:
         return list(paths)
+    if n >= 4096:
+        return _indexed_order(paths, start, cancelled)
     S = np.array([p[0] for p in paths], dtype=np.float64)
     E = np.array([p[-1] for p in paths], dtype=np.float64)
     cur = np.array(start, dtype=np.float64)
     out = []
-    for _ in range(n):
+    for step in range(n):
+        if step % 128 == 0 and cancelled and cancelled():
+            raise CancelledError()
         ds = ((S - cur) ** 2).sum(1)
         de = ((E - cur) ** 2).sum(1)
         i, j = int(ds.argmin()), int(de.argmin())
@@ -49,6 +55,78 @@ def nn_order(paths, start=(0.0, 0.0)):
             cur = S[j].copy()
             k = j
         S[k] = E[k] = 1e12
+    return out
+
+
+def _indexed_order(paths, start, cancelled=None):
+    """Vecino más cercano exacto con índice espacial y borrado de extremos.
+
+    Evita comparar todos los extremos restantes en cada paso. No elimina,
+    aproxima ni une trazos; conserva los mismos desempates del recorrido lento.
+    """
+    points = np.asarray([end for p in paths for end in (p[0], p[-1])], dtype=np.float64)
+    nodes, leaves = [], np.empty(len(points), dtype=np.int32)
+
+    def build(ids, parent=-1):
+        box = np.array([points[ids].min(0), points[ids].max(0)])
+        index = len(nodes)
+        node = {'box': box, 'parent': parent, 'count': len(ids)}
+        nodes.append(node)
+        if len(ids) <= 16:
+            node['ids'] = ids
+            leaves[ids] = index
+        else:
+            axis = int(np.argmax(box[1] - box[0]))
+            middle = len(ids) // 2
+            order = np.argpartition(points[ids, axis], middle)
+            node['children'] = (build(ids[order[:middle]], index), build(ids[order[middle:]], index))
+        return index
+
+    build(np.arange(len(points)))
+    used = np.zeros(len(paths), dtype=bool)
+    current, out = np.asarray(start, dtype=np.float64), []
+
+    def distance(box):
+        delta = np.maximum(np.maximum(box[0] - current, current - box[1]), 0)
+        return float(delta @ delta)
+
+    for step in range(len(paths)):
+        if step % 128 == 0 and cancelled and cancelled():
+            raise CancelledError()
+        best, endpoint = (float('inf'), 2, len(paths)), None
+        queue = [(distance(nodes[0]['box']), 0)]
+        while queue:
+            lower, index = heapq.heappop(queue)
+            if lower > best[0]:
+                break
+            node = nodes[index]
+            if not node['count']:
+                continue
+            if 'children' in node:
+                for child in node['children']:
+                    if nodes[child]['count']:
+                        lower = distance(nodes[child]['box'])
+                        if lower <= best[0]:
+                            heapq.heappush(queue, (lower, child))
+            else:
+                ids = node['ids'][~used[node['ids'] // 2]]
+                deltas = points[ids] - current
+                squared = np.einsum('ij,ij->i', deltas, deltas)
+                for point_id, value in zip(ids, squared):
+                    # Igual distancia: primero inicio, luego índice original.
+                    candidate = (float(value), int(point_id % 2), int(point_id // 2))
+                    if candidate < best:
+                        best, endpoint = candidate, int(point_id)
+        k = endpoint // 2
+        used[k] = True
+        p = paths[k] if endpoint % 2 == 0 else paths[k][::-1]
+        out.append(p)
+        current = p[-1]
+        for point_id in (2 * k, 2 * k + 1):
+            index = int(leaves[point_id])
+            while index >= 0:
+                nodes[index]['count'] -= 1
+                index = nodes[index]['parent']
     return out
 
 

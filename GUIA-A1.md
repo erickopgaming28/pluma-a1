@@ -1,5 +1,15 @@
 # Pluma A1 · puesta en marcha
 
+## Actualización: imágenes grandes (3 de octubre de 2026)
+
+La versión **2026.10.03.12** prepara las imágenes sin mantener una solicitud abierta durante toda la conversión. Muestra la etapa actual y descarta preparaciones anteriores si cambias un ajuste. Un solo trabajador evita acumular conversiones simultáneas; la ordenación espacial conserva los mismos trazos y sus extremos. La vista previa reutiliza el recorrido al mover o girar elementos.
+
+El modo directo regula cuánto recorrido adelanta: una ventana estimada de 12 segundos, con reserva para alimentar la cola antes de que se vacíe. Un paquete largo puede superar la ventana. Los ACK y la espera de finalización reciben margen según el recorrido pendiente estimado; no se añade `M400` entre grupos normales ni se reenvían instrucciones inciertas. Pausa, cancelación y fin mantienen sus barreras físicas. La estimación no prueba la posición real ni reemplaza la confirmación de terminación.
+
+Verificación: 76 pruebas automáticas, incluida una imagen de 4000 × 4000 píxeles convertida, rotada, exportada y transmitida completa a un receptor de prueba, además de 30 000 comandos consecutivos. Se comprobaron progreso y cancelación de conversiones en escritorio y móvil. Ninguna prueba mueve la impresora. La fluidez física debe comprobarse en la A1; el APK no se recompiló.
+
+Comprueba **Versión 2026.10.03.12** en el encabezado de escritorio. Una instancia anterior necesita cerrarse y abrirse de nuevo con **Iniciar Pluma A1.bat** cuando no haya un trabajo activo. Recarga con **Ctrl+F5** y vuelve a cargar las imágenes si se reinició el servidor.
+
 ## Actualización: opción Una línea (3 de octubre de 2026)
 
 La versión **2026.10.03.11** muestra **Una línea** (antes Trazo central) como estilo inicial para imágenes nuevas y al restablecer sus ajustes. Sigue el centro de la franja oscura, sin sus dos bordes ni sombreado. Los estilos de imágenes ya guardadas se conservan: selecciona el elemento y pulsa **Una línea** para convertirlo. Formas separadas pueden necesitar varios recorridos. Si el original ya contiene líneas huecas, cada lado puede seguir siendo un trazo separado; no reconstruye automáticamente una firma a partir de sus contornos.
