@@ -16,7 +16,7 @@ class ExtendedImageTests(unittest.TestCase):
         rgb = np.full((160, 220, 3), 255, np.uint8)
         cv2.ellipse(rgb, (110, 80), (60, 55), 0, 0, 360, (80, 80, 80), 2)
         cv2.line(rgb, (70, 70), (150, 90), (140, 140, 140), 3)
-        for mode in ('trazo', 'contornos', 'fotolinea', 'boceto', 'rayado', 'retrato'):
+        for mode in ('trazo', 'contornos', 'fotolinea', 'boceto', 'rayado', 'retrato', 'puntillismo'):
             with self.subTest(mode=mode):
                 layers, height = sketch.make_sketch(rgb, {'mode': mode, 'detail': 300,
                     'photo_cleaning': 200, 'shade': 300, 'contrast': 150}, 80)

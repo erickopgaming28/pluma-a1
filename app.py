@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parent
 CONFIG_FILE = ROOT / "config.json"
 IMAGE_CACHE = ROOT / '.image-cache'
 PORT = 8765
-APP_VERSION = '2026.10.03.16'
+APP_VERSION = '2026.10.03.17'
 WORKSPACE_ID = str(uuid.uuid5(uuid.NAMESPACE_URL, str(ROOT).casefold()))
 
 DEFAULT_CONFIG = {
@@ -183,7 +183,7 @@ def api_state():
     for fid, label in fonts.CATALOG:
         font_list.append({"id": fid, "label": label, "sample": font_sample(fonts.get_font(fid))})
     return jsonify({"config": public_config(), "fonts": font_list, "geometry": geometry(),
-                    'app_version': APP_VERSION, 'features': {'async_images': True, 'motion_settings': True, 'extended_images': True, 'paper_layout': True, 'portrait': True},
+                    'app_version': APP_VERSION, 'features': {'async_images': True, 'motion_settings': True, 'extended_images': True, 'paper_layout': True, 'portrait': True, 'stippling': True},
                     "paper_sizes": gcode.PAPER_SIZES, "lan_url": lan_url()})
 
 
@@ -416,7 +416,7 @@ def _convert_element(d, cfg=None, progress=None, cancelled=None):
         info = pen_info(i, cfg)
         view.append({"pen": i, "name": info["name"], "color": info["color"], "paths": pathops.to_flat(layers[i])})
     return {"w": w, "h": h, "layers": view, "render_id": render_id,
-            'preview_width': .3 if d.get('type') == 'image' and o.get('mode') == 'retrato' else .42}
+            'preview_width': .3 if d.get('type') == 'image' and o.get('mode') in ('retrato', 'puntillismo') else .42}
 
 
 @app.post("/api/compose")

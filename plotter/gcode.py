@@ -413,6 +413,7 @@ def build_gcode(layers, cfg, title="dibujo", pen_ready=False):
         g += _level(lo[0], lo[1], hi[0], hi[1])
 
     done, next_mark = 0.0, 2.0
+    completed_paths = 0
     for i, (name, qs) in enumerate(conv):
         g += ["", f"; ===== pluma {i + 1}/{len(conv)}: {name} =====", "M204 S6000"]
         # entre colores la pausa es obligatoria; al inicio no hace falta si la pluma ya está ajustada
@@ -426,7 +427,9 @@ def build_gcode(layers, cfg, title="dibujo", pen_ready=False):
             g.extend(f"G1 X{x:.2f} Y{y:.2f}" for x, y in q[2:])
             g.append(f"G1 Z{z_up:.2f} F{f_z:.0f}")
             done += float(np.hypot(*np.diff(q, axis=0).T).sum())
-            pct = 100 * done / max(st["draw_mm"], 1e-6)
+            completed_paths += 1
+            # Dot-only jobs have no XY drawing length; report actual contacts.
+            pct = 100 * (done / st['draw_mm'] if st['draw_mm'] > 1e-6 else completed_paths / st['lifts'])
             if pct >= next_mark:
                 g.append(f"M73 P{min(99, int(pct))} R{max(0, round(total * (1 - pct / 100) / 60))}")
                 next_mark = pct + 2
@@ -441,6 +444,9 @@ def build_svg(layers, cfg):
     for layer in layers:
         parts.append(f'<g fill="none" stroke="{escape(layer["color"])}" stroke-width="0.3" stroke-linecap="round" stroke-linejoin="round">')
         for p in layer['paths']:
+            if len(p) > 1 and np.all(np.asarray(p) == p[0]):
+                parts.append(f'<circle cx="{p[0][0]:.3f}" cy="{p[0][1]:.3f}" r="0.15" fill="{escape(layer["color"])}" stroke="none"/>')
+                continue
             points = ' '.join(f'{x:.3f},{y:.3f}' for x, y in p)
             parts.append(f'<polyline points="{points}"/>')
         parts.append('</g>')

@@ -65,6 +65,12 @@ Los porcentajes de imagen admiten un rango ampliado: detalle, limpieza y sombrea
 
 Ambos generan recorridos reales exportables, con progreso y cancelación. La difusión no muestrea más fino que los píxeles de trabajo, para limitar memoria incluso en recortes muy alargados. La vista previa del retrato supone una punta de 0.3 mm; no cambia el grosor ni la presión física del instrumento. La A1 mantiene una altura de apoyo fija y aproxima el gris mediante densidad de líneas, así que no reproduce exactamente el sombreado manual del grafito. Revisa el tiempo estimado: un retrato detallado puede requerir horas por las subidas y bajadas de la punta.
 
+### Puntillismo
+
+**Puntillismo** representa luces y sombras mediante puntos independientes, con más puntos en las zonas oscuras. Cada punto genera un contacto real: desplazamiento con la punta levantada, bajada y subida, sin unir puntos con líneas. El botón prepara densidad 100 %, separación 0.7 mm, brillo y contraste neutros y la pluma más oscura; conserva el recorte, tamaño y colocación.
+
+Puedes ajustar **Separación de los puntos** entre 0.3 y 10 mm y **Densidad de los puntos** hasta 300 %, además de limpieza, brillo y contraste. Menor separación aumenta detalle, número de contactos y tiempo. La vista y el SVG suponen puntos de 0.3 mm; la marca física depende de la punta y del apoyo. El envío conserva las levantadas necesarias para cada punto, aunque los comandos se transmitan de forma continua. Admite recorte, rotación, colores, progreso y cancelación; el G-code de un dibujo compuesto sólo de puntos también informa avance por contactos.
+
 **Restablecer ajustes del dibujo** conserva el encuadre y la colocación. **Restablecer imagen original** también elimina el recorte y recupera la colocación, tamaño, giro y color iniciales de ese elemento. En diseños guardados antes de esta función, la colocación existente al cargarlos se toma como punto inicial; no hay un historial anterior de posiciones.
 
 Activa **Editar márgenes** y arrastra los tiradores del centro de los cuatro bordes; también puedes escribir cada margen. Se guardan para los siguientes dibujos, conservando las alturas y la calibración. **Restablecer márgenes** recupera el margen uniforme definido en Ajustes. Estas guías no amplían el alcance físico: puedes colocar elementos fuera de ellas, pero el servidor rechaza cualquier trazo fuera de la zona alcanzable.

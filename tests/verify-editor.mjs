@@ -42,11 +42,15 @@ try {
     const canceled = [];
     function convert(body) {
       conversions.push(body);
-      const sample = structuredClone(body.type === 'image' ? imageFixtures[(['fotolinea','retrato'].includes(body.opts.mode) ? 'contornos' : body.opts.mode || 'boceto') + '-' + (body.opts.crop?.w === .5 ? 'middle' : 'full')] : fixture.text);
+      const sample = structuredClone(body.type === 'image' ? imageFixtures[(['fotolinea','retrato','puntillismo'].includes(body.opts.mode) ? 'contornos' : body.opts.mode || 'boceto') + '-' + (body.opts.crop?.w === .5 ? 'middle' : 'full')] : fixture.text);
       const ratio = body.w / sample.w;
       if (body.type === 'image') {
         sample.h *= ratio;
         for (const l of sample.layers) l.paths = l.paths.map(p => p.map(v => v * ratio));
+        if (body.opts.mode === 'puntillismo') {
+          sample.preview_width = .3;
+          for (const l of sample.layers) l.paths = l.paths.flatMap(p => Array.from({length:Math.floor(p.length/4)},(_,i)=>[p[i*4],p[i*4+1],p[i*4],p[i*4+1]]));
+        }
       }
       sample.w = body.w;
       sample.render_id += '-' + body.id + '-' + taskNumber;
@@ -57,7 +61,7 @@ try {
       const url = new URL(route.request().url());
       const endpoint = url.pathname;
       let data;
-      if (endpoint === '/api/state') data = { ...fixture.state, geometry: editorGeometry(), config: { ...fixture.state.config, paper: editorPaper, pen: motionPen }, app_version: '2026.10.03.16', features: { async_images: true, motion_settings: motionSettingsSupported, extended_images: true, paper_layout: true, portrait: motionSettingsSupported } };
+      if (endpoint === '/api/state') data = { ...fixture.state, geometry: editorGeometry(), config: { ...fixture.state.config, paper: editorPaper, pen: motionPen }, app_version: '2026.10.03.17', features: { async_images: true, motion_settings: motionSettingsSupported, extended_images: true, paper_layout: true, portrait: motionSettingsSupported, stippling: motionSettingsSupported } };
       else if (endpoint === '/api/paper-layout') {
         const value = route.request().postDataJSON().margins;
         savedMargins.push(value); editorPaper.margins = value;
@@ -294,7 +298,7 @@ try {
     assert.ok(canceled.includes(obsolete));
     assert.equal(conversions.at(-1).opts.mode, 'trazo');
     assert.ok(!compositions.at(-1).items.some(it => it.render_id === tasks.get(obsolete).result.render_id));
-    assert.equal(await page.locator('#appVersion').textContent(), 'Versión 2026.10.03.16');
+    assert.equal(await page.locator('#appVersion').textContent(), 'Versión 2026.10.03.17');
     await page.locator('[data-photo-mode]').click();
     await page.waitForFunction(() => !document.querySelector('#send').disabled && document.querySelector('#busy').hidden);
     assert.equal(conversions.at(-1).opts.mode, 'fotolinea');
@@ -387,6 +391,26 @@ try {
     assert.ok(await page.locator('[data-opt="image.cross"]').isVisible());
     await page.waitForTimeout(300);
     assert.equal(conversions.at(-1).opts.portrait_style,'rayado');
+    await page.locator('#stipplingMode').click();
+    await page.waitForFunction(() => document.querySelector('#busy').hidden && !document.querySelector('#send').disabled);
+    assert.equal(conversions.at(-1).opts.mode,'puntillismo');
+    assert.equal(conversions.at(-1).opts.dot_spacing,.7);
+    assert.equal(conversions.at(-1).opts.shade,100);
+    assert.ok(await page.locator('[data-k="dot_spacing"]').isVisible());
+    assert.ok(!await page.locator('[data-k="hatch_spacing"]').isVisible());
+    assert.ok(!await page.locator('[data-k="detail"]').isVisible());
+    assert.ok(!await page.locator('#portraitStyles').isVisible());
+    assert.equal(await page.locator('#stipplingMode').getAttribute('aria-pressed'),'true');
+    // Filled dot paths must be painted by the actual editor, including cached redraw.
+    const visibleDotFills=await page.evaluate(() => {
+      window.__dotFills=0;const fill=CanvasRenderingContext2D.prototype.fill;
+      CanvasRenderingContext2D.prototype.fill=function(...args){if(args[0] instanceof Path2D)window.__dotFills++;return fill.apply(this,args);};
+      return window.__dotFills;
+    });
+    await page.locator('#zoomIn').click();
+    assert.ok(await page.evaluate(() => window.__dotFills)>visibleDotFills);
+    await page.locator('#centerView').click();
+    await page.screenshot({path:path.join(root,'tests/artifacts/puntillismo-editor-'+name+'.png'),fullPage:name==='movil'});
     await page.locator('[data-photo-mode]').click();
     await page.waitForFunction(() => document.querySelector('#busy').hidden && !document.querySelector('#send').disabled);
     await page.screenshot({ path: path.join(root, 'tests/artifacts/foto-lineas-' + name + '.png'), fullPage: name === 'movil' });
@@ -404,6 +428,7 @@ try {
     await page.waitForFunction(() => !document.querySelector('#send').disabled);
     assert.ok(await page.locator('#openMotion').isDisabled());
     assert.ok(await page.locator('#portraitMode').isDisabled());
+    assert.ok(await page.locator('#stipplingMode').isDisabled());
     assert.ok(await page.locator('#updateNotice').isVisible());
     console.log(name + ': rotación, medidas, recorte, estilos, guardado y conversión con progreso/cancelación verificados; sin impresora.');
     await context.close();

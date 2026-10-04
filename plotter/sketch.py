@@ -301,6 +301,48 @@ def _hex_rgb(h):
     return [int(h[i:i + 2], 16) for i in (0, 2, 4)]
 
 
+def _stippling(dark, o, ppm, rng, report):
+    """Separate pen contacts, never joined strokes; density preserves tone."""
+    strength = float(o.get('shade', 100)) / 100
+    if strength <= 0:
+        return []
+    H, W = dark.shape
+    spacing = max(1., float(o.get('dot_spacing', .7)) * ppm)
+    cleaning = float(o.get('photo_cleaning', 65)) / 100
+    tone = cv2.GaussianBlur(dark.astype(np.float32), (0, 0), .6 + cleaning)
+    tone = np.power(np.clip(tone, 0, 1), .95 / max(.2, strength))
+    # A rectangular sampling grid stays bounded even for very tall crops.
+    xs = np.arange(min(spacing / 2, (W - 1) / 2), W - .5, spacing)
+    ys = np.arange(min(spacing / 2, (H - 1) / 2), H - .5, spacing)
+    xx, yy = np.meshgrid(xs, ys)
+    sampled = cv2.remap(tone, xx.astype(np.float32), yy.astype(np.float32), cv2.INTER_LINEAR)
+    values = sampled.astype(np.float64)
+    rows, cols = values.shape
+    out = []
+    for y in range(rows):
+        if y % 16 == 0:
+            report(40 + int(23 * y / rows), 'Distribuyendo los puntos según los tonos de la imagen…')
+        step = 1 if y % 2 == 0 else -1
+        for x in range(cols) if step == 1 else range(cols - 1, -1, -1):
+            black = values[y, x] >= .5 and sampled[y, x] > 0
+            if black:
+                # Slight seeded displacement reduces the appearance of a grid.
+                p = np.clip([xs[x], ys[y]] + rng.uniform(-.15, .15, 2) * spacing,
+                            [0, 0], [W - 1, H - 1])
+                out.append(np.array([p, p]))
+            error = values[y, x] - float(black)
+            ahead = x + step
+            if 0 <= ahead < cols:
+                values[y, ahead] += error * 7 / 16
+            if y + 1 < rows:
+                values[y + 1, x] += error * 5 / 16
+                if 0 <= x - step < cols:
+                    values[y + 1, x - step] += error * 3 / 16
+                if 0 <= ahead < cols:
+                    values[y + 1, ahead] += error / 16
+    return out
+
+
 def make_sketch(rgb, o, width_mm, pens=None, progress=None, cancelled=None):
     """Devuelve ({pluma: trazos en mm, origen arriba-izquierda}, alto en mm).
 
@@ -316,7 +358,8 @@ def make_sketch(rgb, o, width_mm, pens=None, progress=None, cancelled=None):
         raise ValueError('El ancho del dibujo debe ser mayor que cero.')
     for key, default, lo, hi in [('detail', 55, 0, 300), ('photo_cleaning', 65, 0, 300),
                                  ('shade', 50, 0, 300), ('contrast', 0, -99, 300),
-                                 ('brightness', 0, -300, 300), ('hatch_angle', 45, -360, 360)]:
+                                 ('brightness', 0, -300, 300), ('hatch_angle', 45, -360, 360),
+                                 ('dot_spacing', .7, .3, 10)]:
         try:
             value = float(o.get(key, default))
         except (TypeError, ValueError):
@@ -342,7 +385,7 @@ def make_sketch(rgb, o, width_mm, pens=None, progress=None, cancelled=None):
     rng = np.random.default_rng(int(o.get("seed", 1)))
     mode = o.get("mode", "boceto")
     report(20, 'Convirtiendo la imagen en líneas…')
-    if mode not in ('boceto', 'contornos', 'rayado', 'trazo', 'fotolinea', 'retrato'):
+    if mode not in ('boceto', 'contornos', 'rayado', 'trazo', 'fotolinea', 'retrato', 'puntillismo'):
         raise ValueError('Elige un estilo de dibujo válido.')
     if mode == 'retrato' and o.get('portrait_style', 'suave') not in ('suave', 'rayado'):
         raise ValueError('Elige tonos suaves o rayado para el retrato.')
@@ -359,7 +402,8 @@ def make_sketch(rgb, o, width_mm, pens=None, progress=None, cancelled=None):
     layers = {}
     if not pens or len(pens) < 2:
         report(40, 'Preparando los trazos y las sombras…')
-        hatch = (_portrait_hatch(1.0 - g / 255.0, o, ppm, rng, report) if mode == 'retrato'
+        hatch = (_stippling(1.0 - g / 255.0, o, ppm, rng, report) if mode == 'puntillismo'
+                 else _portrait_hatch(1.0 - g / 255.0, o, ppm, rng, report) if mode == 'retrato'
                  else _hatch(1.0 - g / 255.0, o, ppm, rng) if mode in ("boceto", "rayado") else [])
         report(65, 'Ordenando el recorrido de la pluma…')
         layers[0] = pathops.nn_order(hatch, cancelled=cancelled) + pathops.nn_order(lines, cancelled=cancelled)
@@ -374,7 +418,8 @@ def make_sketch(rgb, o, width_mm, pens=None, progress=None, cancelled=None):
         darkest = int(pal_lab[:, 0].argmin())  # los contornos van con la pluma más oscura
         for k in range(len(pens)):
             report(40 + int(50 * k / len(pens)), f'Preparando los trazos del color {k + 1} de {len(pens)}…')
-            hatch = (_portrait_hatch(ink * (near == k), o, ppm, rng, report, turn=25.0 * k) if mode == 'retrato'
+            hatch = (_stippling(ink * (near == k), o, ppm, rng, report) if mode == 'puntillismo'
+                     else _portrait_hatch(ink * (near == k), o, ppm, rng, report, turn=25.0 * k) if mode == 'retrato'
                      else _hatch(ink * (near == k), o, ppm, rng, turn=25.0 * k) if mode in ("boceto", "rayado") else [])
             paths = pathops.nn_order(hatch, cancelled=cancelled) + (pathops.nn_order(lines, cancelled=cancelled) if k == darkest else [])
             if paths:

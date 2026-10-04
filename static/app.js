@@ -19,6 +19,7 @@ const SLIDERS = {
     { k: 'photo_cleaning', label: 'Limpieza de textura en la foto', min: 0, max: 300, step: 1, unit: ' %' },
     { k: 'shade', label: 'Cantidad de sombreado', min: 0, max: 300, step: 1, unit: ' %' },
     { k: 'hatch_spacing', label: 'Separación del rayado', min: 0.3, max: 10, step: 0.05, unit: ' mm' },
+    { k: 'dot_spacing', label: 'Separación de los puntos', min: 0.3, max: 10, step: 0.05, unit: ' mm' },
     { k: 'hatch_angle', label: 'Ángulo del rayado', min: -360, max: 360, step: 5, unit: '°' },
     { k: 'brightness', label: 'Brillo', min: -300, max: 300, step: 1, unit: ' %' },
     { k: 'contrast', label: 'Contraste', min: -99, max: 300, step: 1, unit: ' %' },
@@ -26,7 +27,7 @@ const SLIDERS = {
 };
 const DEFAULTS = {
   text: { font: 'EMSAllure', size: 9, line_spacing: 1.15, letter_spacing: 0, slant: 0, human: 55, align: 'left', join: true, seed: 1 },
-  image: { mode: 'trazo', detail: 55, threshold: 160, photo_cleaning: 65, shade: 50, hatch_spacing: 1.2, hatch_angle: 45, brightness: 0, contrast: 0, cross: true, invert: false, seed: 1, portrait_style: 'suave' },
+  image: { mode: 'trazo', detail: 55, threshold: 160, photo_cleaning: 65, shade: 50, hatch_spacing: 1.2, dot_spacing: .7, hatch_angle: 45, brightness: 0, contrast: 0, cross: true, invert: false, seed: 1, portrait_style: 'suave' },
 };
 const SAMPLE = 'Querida Sofía:\n\nTe escribo esta carta sin tocar la pluma: la sostiene mi impresora 3D. ¿Verdad que parece letra de verdad?\n\nUn abrazo,\nErick';
 
@@ -310,12 +311,15 @@ function paintImageOptions(el) {
     boceto: 'Combina contornos y rayado para representar las sombras.',
     rayado: 'Representa las sombras con líneas paralelas, sin contornos.',
     fotolinea: 'Conserva bordes y rasgos de la foto como líneas, sin representar sus tonos de gris. Para dar volumen al rostro, usa Retrato con sombras.',
-    retrato: 'Conserva rasgos y sombras para dar volumen al rostro. El botón prepara brillo y contraste neutros y usa tu pluma más oscura. Menor separación da más detalle y tarda más. La A1 mantiene una altura de apoyo fija: los grises se aproximan con la densidad de los trazos.'
+    retrato: 'Conserva rasgos y sombras para dar volumen al rostro. El botón prepara brillo y contraste neutros y usa tu pluma más oscura. Menor separación da más detalle y tarda más. La A1 mantiene una altura de apoyo fija: los grises se aproximan con la densidad de los trazos.',
+    puntillismo: 'Representa luces y sombras con puntos separados, sin unirlos con líneas. Menor separación conserva más detalle y aumenta el tiempo: la punta sube y baja en cada punto. La vista supone una punta de 0.3 mm; el tamaño real depende de tu instrumento.'
   }[mode] || '';
   for (const input of $$('#imageSliders input')) {
     const key = input.dataset.k;
-    input.closest('label').hidden = key === 'threshold' ? mode !== 'trazo' : key === 'photo_cleaning' ? !['fotolinea', 'retrato'].includes(mode)
-      : ['shade', 'hatch_spacing', 'hatch_angle'].includes(key) ? !hatch : key === 'detail' && mode === 'rayado';
+    input.closest('label').hidden = key === 'threshold' ? mode !== 'trazo' : key === 'photo_cleaning' ? !['fotolinea', 'retrato', 'puntillismo'].includes(mode)
+      : key === 'dot_spacing' ? mode !== 'puntillismo' : key === 'shade' ? !(hatch || mode === 'puntillismo')
+      : ['hatch_spacing', 'hatch_angle'].includes(key) ? !hatch : key === 'detail' && ['rayado', 'puntillismo'].includes(mode);
+    if (key === 'shade') input.previousElementSibling.firstChild.textContent = mode === 'puntillismo' ? 'Densidad de los puntos' : 'Cantidad de sombreado';
     if (key === 'detail') input.previousElementSibling.firstChild.textContent = mode === 'trazo' ? 'Detalle de la línea' : 'Detalle de los contornos';
     if (key === 'hatch_spacing') input.previousElementSibling.firstChild.textContent = mode === 'retrato' ? 'Separación de los trazos' : 'Separación del rayado';
   }
@@ -325,6 +329,8 @@ function paintImageOptions(el) {
   $('[data-photo-mode]').setAttribute('aria-pressed', mode === 'fotolinea');
   $('#portraitMode').classList.toggle('on', mode === 'retrato');
   $('#portraitMode').setAttribute('aria-pressed', mode === 'retrato');
+  $('#stipplingMode').classList.toggle('on', mode === 'puntillismo');
+  $('#stipplingMode').setAttribute('aria-pressed', mode === 'puntillismo');
   $('#restoreCrop').disabled = !el.opts.crop;
   $('#cropSummary').textContent = el.opts.crop ? `Recorte: ${(el.opts.crop.w * 100).toFixed(1)} % del ancho × ${(el.opts.crop.h * 100).toFixed(1)} % del alto original.` : 'Se usa la imagen completa.';
   paintExtendedHint();
@@ -444,26 +450,45 @@ function draw(limit = Infinity) {
     if (limit === Infinity) {
       let cached = previewPaths.get(g.paths);
       if (!cached) {
-        cached = new Path2D();
+        cached = { lines: new Path2D(), centers: [] };
         for (const p of g.paths) {
           if (p.length < 4) continue;
-          cached.moveTo(p[0], p[1]);
-          for (let i = 2; i < p.length; i += 2) cached.lineTo(p[i], p[i + 1]);
+          if (p.length === 4 && p[0] === p[2] && p[1] === p[3]) {
+            cached.centers.push([p[0], p[1]]); continue;
+          }
+          cached.lines.moveTo(p[0], p[1]);
+          for (let i = 2; i < p.length; i += 2) cached.lines.lineTo(p[i], p[i + 1]);
         }
         previewPaths.set(g.paths, cached);
       }
       ctx.save();
       ctx.transform(c * f, sn * f, -sn * f, c * f, X, Y);
       ctx.lineWidth /= f;
-      ctx.stroke(cached); ctx.restore();
+      ctx.stroke(cached.lines);
+      const radius = ctx.lineWidth / 2;
+      if (cached.centers.length) {
+        if (cached.radius !== radius) {
+          cached.dots = new Path2D(); cached.radius = radius;
+          for (const [x, y] of cached.centers) {
+            cached.dots.moveTo(x + radius, y); cached.dots.arc(x, y, radius, 0, Math.PI * 2);
+          }
+        }
+        ctx.fillStyle = g.color; ctx.fill(cached.dots);
+      }
+      ctx.restore();
       continue;
     }
     ctx.beginPath();
     for (const p of g.paths) {
       if (left <= 0) break;
       const n = Math.min(p.length / 2, left + 1);
-      ctx.moveTo(px(p[0], p[1]), py(p[0], p[1]));
-      for (let j = 1; j < n; j++) ctx.lineTo(px(p[2 * j], p[2 * j + 1]), py(p[2 * j], p[2 * j + 1]));
+      if (p.length === 4 && p[0] === p[2] && p[1] === p[3]) {
+        ctx.fillStyle = g.color;
+        const dot = new Path2D(); dot.arc(px(p[0], p[1]), py(p[0], p[1]), ctx.lineWidth / 2, 0, Math.PI * 2); ctx.fill(dot);
+      } else {
+        ctx.moveTo(px(p[0], p[1]), py(p[0], p[1]));
+        for (let j = 1; j < n; j++) ctx.lineTo(px(p[2 * j], p[2 * j + 1]), py(p[2 * j], p[2 * j + 1]));
+      }
       left -= p.length / 2 - 1;
       if (left <= 0) tip = [px(p[2 * n - 2], p[2 * n - 1]), py(p[2 * n - 2], p[2 * n - 1]), g.color];
     }
@@ -1016,6 +1041,7 @@ async function init() {
   R.asyncImages = !!st.features?.async_images;
   R.paperLayout = !!st.features?.paper_layout;
   $('#portraitMode').disabled = !st.features?.portrait;
+  $('#stipplingMode').disabled = !st.features?.stippling;
   $('#editMargins').disabled = !R.paperLayout;
   if (!st.features?.extended_images) for (const c of SLIDERS.image) {
     if (['detail', 'shade', 'photo_cleaning', 'contrast'].includes(c.k)) c.max = 100;
@@ -1023,8 +1049,8 @@ async function init() {
   }
   $('#openMotion').hidden = false;
   $('#openMotion').disabled = !st.features?.motion_settings;
-  $('#updateNotice').hidden = !!st.features?.motion_settings && !!st.features?.extended_images && R.paperLayout && !!st.features?.portrait;
-  $('#updateNotice').textContent = 'Actualización preparada: cuando termine el dibujo, cierra la terminal de Pluma A1 y vuelve a abrir Iniciar Pluma A1.bat. Después recarga esta página para activar Retrato con sombras y las herramientas nuevas.';
+  $('#updateNotice').hidden = !!st.features?.motion_settings && !!st.features?.extended_images && R.paperLayout && !!st.features?.portrait && !!st.features?.stippling;
+  $('#updateNotice').textContent = 'Actualización preparada: cuando termine el dibujo, cierra la terminal de Pluma A1 y vuelve a abrir Iniciar Pluma A1.bat. Después recarga esta página para activar Puntillismo y las herramientas nuevas.';
   paintMotion();
   $('#appVersion').textContent = st.app_version ? `Versión ${st.app_version}` : 'Versión anterior: reinicia la terminal para cargar las mejoras';
   $('#lanUrl').textContent = st.lan_url || 'no disponible (sin red local)';
@@ -1041,17 +1067,19 @@ async function init() {
   buildFonts(st.fonts);
   buildSliders('text'); buildSliders('image');
   bindOptions();
-  $('#portraitMode').addEventListener('click', () => {
+  function prepareTonalImage(mode) {
     const el = sel(); if (el?.type !== 'image') return;
-    el.opts = { ...el.opts, mode: 'retrato', detail: 70, photo_cleaning: 85, shade: 100, portrait_style: 'suave',
-                hatch_spacing: .35, hatch_angle: 45, cross: true, brightness: 0, contrast: 0, invert: false };
+    el.opts = { ...el.opts, mode, detail: 70, photo_cleaning: 85, shade: 100, portrait_style: 'suave',
+                hatch_spacing: .35, dot_spacing: .7, hatch_angle: 45, cross: true, brightness: 0, contrast: 0, invert: false };
     el.colorMode = 'single';
     el.pen = R.cfg.pens.map((p, i) => {
       const c = p.color.slice(1).match(/../g).map(v => parseInt(v, 16));
       return { i, tone: .2126*c[0]+.7152*c[1]+.0722*c[2] };
     }).sort((a,b) => a.tone-b.tone)[0].i;
     touch(el, true); syncPanel();
-  });
+  }
+  $('#portraitMode').addEventListener('click', () => prepareTonalImage('retrato'));
+  $('#stipplingMode').addEventListener('click', () => prepareTonalImage('puntillismo'));
   bindCanvas();
   $('#panView').addEventListener('click', () => setCanvasTool(R.canvasTool === 'pan' ? '' : 'pan'));
   $('#editMargins').addEventListener('click', () => setCanvasTool(R.canvasTool === 'margins' ? '' : 'margins'));
