@@ -24,8 +24,9 @@ class FeedingTests(unittest.TestCase):
                 if len(self.sent) == 1: self.confirm(text)
                 return {'result': 'SUCCESS'}
         link = SilentLink()
-        job = DirectJob(block_timeout=.2, poll_interval=.002,
-                        clock=lambda: time.monotonic() * 1e6)
+        # This short route fits inside the window. Real time keeps the final
+        # confirmation pending while the test inspects it, on every platform.
+        job = DirectJob(block_timeout=2, poll_interval=.002)
         motions = [f'G1 X{i / 10:.2f} Y10 F2400' for i in range(1, 401)]
         job.start(program('G1 X0 Y0 Z3 F12000', *motions), 'sin telemetría intermedia', link, continuous=True)
         self.wait_for(lambda: bool(link.sent) and link.sent[-1].startswith('M400\n'))
