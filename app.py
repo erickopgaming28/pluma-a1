@@ -17,13 +17,13 @@ import numpy as np
 from flask import Flask, jsonify, request, send_file
 from werkzeug.serving import ThreadedWSGIServer
 
-from plotter import fonts, gcode, handwriting, pathops, printer, sketch, stream, conversion
+from plotter import fonts, gcode, handwriting, pathops, printer, sketch, stream, conversion, local_ai
 
 ROOT = Path(__file__).resolve().parent
 CONFIG_FILE = ROOT / "config.json"
 IMAGE_CACHE = ROOT / '.image-cache'
 PORT = 8765
-APP_VERSION = '2026.10.04.19'
+APP_VERSION = '2026.10.04.20'
 WORKSPACE_ID = str(uuid.uuid5(uuid.NAMESPACE_URL, str(ROOT).casefold()))
 
 DEFAULT_CONFIG = {
@@ -48,6 +48,7 @@ last_dispatch = {}
 link = printer.PrinterLink()
 direct_job = stream.DirectJob()
 image_conversions = conversion.ConversionQueue()
+ai_conversions = conversion.ConversionQueue(limit=2, retained=12)
 direct_job_kind = ''
 stream_failure_cleared = False
 direct_command = {}
@@ -183,7 +184,7 @@ def api_state():
     for fid, label in fonts.CATALOG:
         font_list.append({"id": fid, "label": label, "sample": font_sample(fonts.get_font(fid))})
     return jsonify({"config": public_config(), "fonts": font_list, "geometry": geometry(),
-                    'app_version': APP_VERSION, 'features': {'async_images': True, 'motion_settings': True, 'extended_images': True, 'paper_layout': True, 'portrait': True, 'stippling': True},
+                    'app_version': APP_VERSION, 'features': {'async_images': True, 'motion_settings': True, 'extended_images': True, 'paper_layout': True, 'portrait': True, 'stippling': True, 'local_ai': True},
                     "paper_sizes": gcode.PAPER_SIZES, "lan_url": lan_url()})
 
 
@@ -362,6 +363,34 @@ def api_element():
     """Convierte un elemento (cuadro de texto o imagen) en trazos medidos desde su propia esquina,
     para que la interfaz pueda moverlo por la hoja sin volver a convertirlo."""
     return jsonify(_convert_element(request.get_json(force=True)))
+
+
+@app.get('/api/ai/models')
+def api_ai_models():
+    return jsonify(local_ai.models(request.args.get('provider', 'ollama')))
+
+
+@app.post('/api/ai/tasks')
+def api_ai_task():
+    d = request.get_json(force=True)
+    item = get_image(d.get('image'))
+    if not item:
+        raise ValueError('Vuelve a cargar la imagen.')
+    # Same crop as the drawing; resizing/rotation of the element do not alter advice.
+    rgb = sketch.crop_image(item['rgb'], d.get('crop')).copy()
+    model, goal, provider = d.get('model'), d.get('goal', 'auto'), d.get('provider', 'ollama')
+    task = ai_conversions.start(lambda progress, cancelled: local_ai.analyze(rgb, model, goal, progress, cancelled, provider))
+    return jsonify(task=task), 202
+
+
+@app.get('/api/ai/tasks/<task_id>')
+def api_ai_task_status(task_id):
+    return jsonify(ai_conversions.snapshot(task_id))
+
+
+@app.post('/api/ai/tasks/<task_id>/cancel')
+def api_ai_task_cancel(task_id):
+    return jsonify(ai_conversions.cancel(task_id))
 
 
 @app.post('/api/element/tasks')

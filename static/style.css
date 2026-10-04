@@ -409,3 +409,8 @@ legend { font-weight: 600; padding: 0 6px; }
 @media (prefers-reduced-motion: reduce) {
   .btn:active { transform: none; }
 }
+.local-ai { margin: 18px 0 26px; padding: 16px; border: 1px solid var(--line); border-radius: 12px; }
+.local-ai summary { cursor: pointer; font-weight: 650; }
+.local-ai .field { margin-top: 16px; }
+.local-ai .btn { margin-top: 8px; }
+.local-ai #aiReason { line-height: 1.55; margin-top: 20px; }

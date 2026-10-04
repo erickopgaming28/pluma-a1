@@ -8,7 +8,7 @@
 <meta name="theme-color" content="#2743b8">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
-<link rel="stylesheet" href="style.css?v=20261004-taller">
+<link rel="stylesheet" href="style.css?v=20261004-ia-local">
 </head>
 <body>
 <header class="top">
@@ -103,6 +103,19 @@
         <button id="restoreCrop" class="btn ghost" type="button" disabled>Imagen completa</button>
       </div>
       <p id="cropSummary" class="hint">Se usa la imagen completa.</p>
+      <details id="localAiPanel" class="local-ai">
+        <summary>Preparar con IA local</summary>
+        <p class="hint">La IA analiza la imagen y propone ajustes para dibujarla. Conserva el original y trabaja en tu equipo; no genera una foto nueva.</p>
+        <label class="field"><span class="lbl">Aplicación local</span><select id="aiProvider"><option value="ollama">Ollama</option><option value="lmstudio">LM Studio / Bionic</option></select></label>
+        <label class="field"><span class="lbl">Modelo con visión</span><select id="aiModel" aria-label="Modelo local con visión"><option value="">Busca tus modelos</option></select></label>
+        <button id="aiRefresh" class="btn ghost wide" type="button">Buscar modelos</button>
+        <label class="field"><span class="lbl">Resultado que buscas</span><select id="aiGoal"><option value="auto">Elegir según la imagen</option><option value="sombras">Retrato con sombras</option><option value="lineas">Líneas limpias, sin sombras</option><option value="puntos">Puntillismo</option></select></label>
+        <button id="aiAnalyze" class="btn wide" type="button" disabled>Analizar esta imagen</button>
+        <button id="aiCancel" class="btn ghost wide" type="button" hidden>Cancelar análisis</button>
+        <p id="aiStatus" class="hint" role="status">Pulsa Buscar modelos para conectar con tu IA local.</p>
+        <p class="hint">LM Studio / Bionic: activa el servidor local en la pestaña Developer (puerto 1234). Se detectan modelos con visión de la API v1. Ollama usa el puerto 11434.</p>
+        <div id="aiProposal" hidden><p id="aiReason"></p><p id="aiSettings" class="hint"></p><button id="aiApply" class="btn wide" type="button">Aplicar ajustes al dibujo</button><p class="hint">Revisa el recorrido antes de enviarlo. Deshacer recupera los ajustes anteriores.</p></div>
+      </details>
       <div class="field">
         <span class="lbl">Cómo dibujar la imagen</span>
         <div class="seg image-modes" data-opt="image.mode">
@@ -113,6 +126,7 @@
         <button id="stipplingMode" class="btn wide photo-mode" type="button" aria-pressed="false"><span>Puntillismo</span><small>Luces y sombras con puntos</small></button>
       </div>
       <p id="imageModeHint" class="hint" role="status"></p>
+      <label class="check"><input type="checkbox" data-opt="image.photo_simplify"> Simplificar textura del papel y la piel</label>
       <div id="portraitStyles" class="field" hidden>
         <span class="lbl">Acabado del retrato</span>
         <div class="seg" data-opt="image.portrait_style"><button data-v="suave">Tonos suaves</button><button data-v="rayado">Rayado</button></div>
@@ -443,6 +457,6 @@
 
 <div id="toast" class="toast" role="status" popover="manual"></div>
 <!-- type=module: las variables del programa no chocan con las que inyectan las extensiones del navegador -->
-<script type="module" src="app.js?v=20261004-taller"></script>
+<script type="module" src="app.js?v=20261004-ia-local"></script>
 </body>
 </html>

@@ -22,7 +22,17 @@ Pluma A1 convierte texto e imágenes en recorridos de pluma para una Bambu Lab A
 
 El editor separa la creación del diseño, la preparación de la A1 y el envío. Puedes mover los elementos libremente, incluso fuera de la hoja; el envío se bloquea mientras haya trazos fuera del alcance de la pluma. Puedes plegar **Posición, tamaño y rotación** para concentrarte en el texto o la imagen. La vista previa muestra las dimensiones de tu hoja y la interfaz se adapta a computadora, celular y al tema claro u oscuro del sistema.
 
-> **Estado:** proyecto experimental. Hay 109 pruebas del motor, pruebas de historial/importación/ajuste y revisión del editor en escritorio y móvil. Incluyen una imagen de 4000 × 4000 píxeles convertida, rotada, exportada y transmitida íntegramente a un receptor de prueba. El usuario observó dibujos con tinta desigual entre zonas y pausas durante la escritura; la uniformidad de contacto, fluidez y precisión todavía requieren comprobación física. Las capturas usan diseños de prueba, sin conexión a una impresora.
+> **Estado:** proyecto experimental. Hay 117 pruebas del motor, pruebas de historial/importación/ajuste y revisión del editor en escritorio y móvil. Incluyen una imagen de 4000 × 4000 píxeles convertida, rotada, exportada y transmitida íntegramente a un receptor de prueba. El usuario observó dibujos con tinta desigual entre zonas y pausas durante la escritura; la uniformidad de contacto, fluidez y precisión todavía requieren comprobación física. Las capturas usan diseños de prueba, sin conexión a una impresora.
+
+## Preparar imágenes con IA local
+
+En **Imagen y trazos → Preparar con IA local**, elige **Ollama** o **LM Studio / Bionic**, pulsa **Buscar modelos**, selecciona un modelo con visión y pulsa **Analizar esta imagen**. Elige automático, líneas limpias, retrato con sombras o puntillismo. Revisa la explicación y pulsa **Aplicar ajustes al dibujo**; **Deshacer** recupera los ajustes anteriores.
+
+Ollama debe responder en `127.0.0.1:11434`; LM Studio / Bionic debe tener su servidor local activo en `127.0.0.1:1234` y exponer la API v1. Se detectan modelos instalados con visión; no se descargan modelos ni se conectan proveedores de nube. LM Studio requiere que su servidor permita acceso local sin autenticación. El análisis usa una copia del recorte a un máximo de 768 píxeles; no reemplaza el original ni modifica el recorte, la posición o el tamaño.
+
+La IA reconoce la imagen y recomienda el acabado, detalle, limpieza, sombreado, brillo y contraste. La conversión en recorridos se realiza con el motor de trazos de Pluma A1, que añade la opción **Simplificar textura del papel y la piel**. Esto no es generación de imágenes por difusión: no reconstruye caras ni produce una foto nueva. Los límites de los ajustes se validan, y las respuestas inválidas no cambian el dibujo. Puedes cancelar incluso durante la carga del modelo.
+
+Los grises se representan mediante la densidad de los trazos o puntos. Un retrato con sombras suele parecerse más al original que sólo bordes, pero necesita más movimientos y tiempo; la vista previa supone una punta de 0.3 mm. El papel, la presión y la nivelación todavía deben comprobarse físicamente.
 
 ## Crear tu diseño
 
@@ -32,6 +42,7 @@ El editor separa la creación del diseño, la preparación de la A1 y el envío.
 | **Dibujar con una línea** | Sigue el centro de las franjas oscuras, sin contorno doble ni sombreado. |
 | **Elegir el acabado** | Una línea, sólo bordes, boceto o sombreado por rayado. |
 | **Convertir fotografías** | Foto a líneas conserva cambios de tono sin sombreado, con limpieza de textura ajustable. |
+| **Preparar con IA local** | Ollama o LM Studio / Bionic analizan la imagen y proponen ajustes. Revisa la propuesta, aplícala y deshazla sin modificar el original. |
 | **Dibujar retratos con sombras** | Tonos suaves mediante trazos cortos o rayado con doce niveles de densidad; conserva volumen y zonas oscuras. |
 | **Comprobar el apoyo** | Prepara nueve cruces repartidas entre las zonas trasera, central y frontal. |
 | **Recortar imágenes** | Marco arrastrable, esquinas, porcentajes y encuadres rápidos. |

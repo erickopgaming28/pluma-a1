@@ -7,3 +7,5 @@ El público necesita opciones claras para elegir acabados, encuadrar, girar, aju
 La experiencia conecta creación, preparación de papel y punta, revisión y envío. Debe conservar compatibilidad con trabajos existentes, recortes, colores, puntillismo y perfiles de velocidad. La calibración y las credenciales de la impresora permanecen locales y separadas del diseño.
 
 El resultado depende de la herramienta, soporte y contacto con el papel. La A1 no puede comprobar dónde dejó tinta. Las pruebas de software se distinguen de las comprobaciones físicas. Las velocidades disponibles son límites de esta aplicación y no certificaciones del soporte.
+
+La preparación con IA local analiza el recorte con un modelo de visión instalado en Ollama o LM Studio / Bionic. Devuelve una propuesta limitada de ajustes que el usuario aplica explícitamente y puede deshacer. Conserva los píxeles originales y no envía comandos a la impresora. No es generación de imágenes ni certifica parecido o resultado físico.

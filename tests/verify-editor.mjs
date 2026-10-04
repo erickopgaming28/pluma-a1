@@ -29,7 +29,7 @@ try {
     const page = await context.newPage();
     const errors = [], compositions = [], conversions = [];
     page.on('pageerror', e => {errors.push(e.message);console.error('Error del navegador:',e.message);});
-    let rendered = new Map(), tasks = new Map(), slowNext = false, taskNumber = 0;
+    let rendered = new Map(), tasks = new Map(), slowNext = false, taskNumber = 0, slowAi = false, aiCanceled = false;
     let motionPen = structuredClone(fixture.state.config.pen), savedSpeeds = 0;
     let editorPaper = structuredClone(fixture.state.config.paper), savedMargins = [];
     const editorGeometry = () => {
@@ -61,7 +61,7 @@ try {
       const url = new URL(route.request().url());
       const endpoint = url.pathname;
       let data;
-      if (endpoint === '/api/state') data = { ...fixture.state, geometry: editorGeometry(), config: { ...fixture.state.config, paper: editorPaper, pen: motionPen }, app_version: '2026.10.04.19', features: { async_images: true, motion_settings: motionSettingsSupported, extended_images: true, paper_layout: true, portrait: motionSettingsSupported, stippling: motionSettingsSupported } };
+      if (endpoint === '/api/state') data = { ...fixture.state, geometry: editorGeometry(), config: { ...fixture.state.config, paper: editorPaper, pen: motionPen }, app_version: '2026.10.04.20', features: { async_images: true, motion_settings: motionSettingsSupported, extended_images: true, paper_layout: true, portrait: motionSettingsSupported, stippling: motionSettingsSupported, local_ai: motionSettingsSupported } };
       else if (endpoint === '/api/paper-layout') {
         const value = route.request().postDataJSON().margins;
         savedMargins.push(value); editorPaper.margins = value;
@@ -72,6 +72,11 @@ try {
         Object.assign(editorPaper, settings.paper); Object.assign(motionPen, settings.pen);
         data = { config: { ...fixture.state.config, paper: editorPaper, pen: motionPen }, geometry: editorGeometry() };
       }
+      else if (endpoint === '/api/ai/models') data={available:true,models:['offline-vision'],message:'Modelo local disponible.'};
+      else if (endpoint === '/api/ai/tasks') data={task:'ai-test'};
+      else if (endpoint === '/api/ai/tasks/ai-test/cancel') {aiCanceled=true;data={state:'canceled'};}
+      else if (endpoint === '/api/ai/tasks/ai-test' && slowAi) data={state:'running',message:'Analizando localmente…'};
+      else if (endpoint === '/api/ai/tasks/ai-test') data={state:'done',message:'Listo',result:{model:'offline-vision',reason:'Conservar sombras del rostro.',opts:{mode:'retrato',detail:45,photo_cleaning:120,shade:100,contrast:0,brightness:0,photo_simplify:true}}};
       else if (endpoint === '/api/motion-settings') {
         Object.assign(motionPen, route.request().postDataJSON()); savedSpeeds++;
         data = { pen: motionPen, next_job_only: true };
@@ -99,6 +104,7 @@ try {
       } else if (endpoint === '/api/compose') {
         const body = route.request().postDataJSON(); compositions.push(body);
         data = structuredClone(fixture.job);
+        if (!body.items.length) data.pages[0].layers = [];
         data.geometry = editorGeometry();
         const [x0, y0, x1, y1] = data.geometry.reach;
         data.outside = body.items.some(it => {
@@ -304,7 +310,7 @@ try {
     assert.ok(canceled.includes(obsolete));
     assert.equal(conversions.at(-1).opts.mode, 'trazo');
     assert.ok(!compositions.at(-1).items.some(it => it.render_id === tasks.get(obsolete).result.render_id));
-    assert.equal(await page.locator('#appVersion').textContent(), 'Versión 2026.10.04.19');
+    assert.equal(await page.locator('#appVersion').textContent(), 'Versión 2026.10.04.20');
     await page.locator('[data-photo-mode]').click();
     await page.waitForFunction(() => !document.querySelector('#send').disabled && document.querySelector('#busy').hidden);
     assert.equal(conversions.at(-1).opts.mode, 'fotolinea');
@@ -486,6 +492,33 @@ try {
     if (name==='escritorio') await page.locator('.panel').evaluate(el=>el.scrollTop=0);
     await page.waitForFunction(()=>!document.querySelector('#toast').matches(':popover-open'));
     await page.screenshot({path:path.join(root,'tests/artifacts/taller-completo-'+name+'.png'),fullPage:name==='movil'});
+    // Local AI advice is explicit, undoable, and cannot modify source pixels.
+    await page.locator('#localAiPanel').evaluate(el=>el.open=true);
+    await page.locator('#aiRefresh').click();
+    await page.waitForFunction(()=>!document.querySelector('#aiAnalyze').disabled);
+    const imageBeforeAi=await page.evaluate(()=>JSON.parse(localStorage.getItem('pluma-a1')).elements.find(e=>e.type==='image'));
+    await page.locator('#aiAnalyze').click();
+    await page.waitForFunction(()=>!document.querySelector('#aiProposal').hidden);
+    assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('pluma-a1')).elements.find(e=>e.type==='image').opts.contrast),imageBeforeAi.opts.contrast);
+    await page.screenshot({path:path.join(root,'tests/artifacts/ia-local-'+name+'.png'),fullPage:name==='movil'});
+    await page.locator('#aiApply').click();
+    await page.waitForFunction(()=>document.querySelector('#busy').hidden && !document.querySelector('#send').disabled);
+    assert.equal(conversions.at(-1).opts.mode,'retrato');
+    assert.equal(conversions.at(-1).opts.photo_simplify,true);
+    assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('pluma-a1')).elements.find(e=>e.type==='image').imageId),imageBeforeAi.imageId);
+    await page.locator('#undoDesign').click();
+    await page.waitForFunction(()=>document.querySelector('#busy').hidden && !document.querySelector('#send').disabled);
+    assert.equal(conversions.at(-1).opts.contrast,imageBeforeAi.opts.contrast);
+    slowAi=true;
+    await page.locator('#aiAnalyze').click();
+    await page.waitForFunction(()=>!document.querySelector('#aiCancel').hidden);
+    await page.locator('#aiCancel').click();
+    await page.waitForFunction(()=>document.querySelector('#aiCancel').hidden);
+    await page.waitForTimeout(800);
+    assert.ok(aiCanceled);
+    assert.ok(await page.locator('#aiProposal').isHidden());
+    assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('pluma-a1')).elements.find(e=>e.type==='image').opts.contrast),imageBeforeAi.opts.contrast);
+
     assert.deepEqual(errors, []);
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
     motionSettingsSupported = false;

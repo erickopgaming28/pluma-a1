@@ -123,13 +123,17 @@ def _centerlines(g, detail, ppm, threshold):
             for p in _trace(skeleton) if len(p) >= max(2, min_len)]
 
 
-def _photo_lines(g, detail, cleaning, ppm):
+def _photo_lines(g, detail, cleaning, ppm, simplify_texture=False):
     """Líneas de fotografía: conservar cambios de tono, sin rellenar sombras.
 
     La reducción de textura respeta los bordes; el umbral se adapta al contraste
     real. No convierte bloques oscuros en esqueletos que deformen los rasgos.
     """
     filtered = cv2.bilateralFilter(g, 9, 8 + 65 * cleaning, 3 + 6 * cleaning)
+    if simplify_texture:
+        # Suppress graphite/paper microtexture before detecting edges. This is
+        # image processing, not neural generation; never synthesize facial parts.
+        filtered = cv2.GaussianBlur(filtered, (0, 0), .45 + .65 * min(cleaning, 1.8))
     gx = cv2.Sobel(filtered, cv2.CV_32F, 1, 0, ksize=3)
     gy = cv2.Sobel(filtered, cv2.CV_32F, 0, 1, ksize=3)
     magnitude = cv2.magnitude(gx, gy)
@@ -398,7 +402,7 @@ def make_sketch(rgb, o, width_mm, pens=None, progress=None, cancelled=None):
     if mode in ('fotolinea', 'retrato'):
         detail, cleaning = float(o.get('detail', 65)), float(o.get('photo_cleaning', 65))
         source = cv2.GaussianBlur(g, (0, 0), .8) if mode == 'retrato' else g
-        lines = _photo_lines(source, detail / 100, cleaning / 100, ppm)
+        lines = _photo_lines(source, detail / 100, cleaning / 100, ppm, o.get('photo_simplify') is True)
     layers = {}
     if not pens or len(pens) < 2:
         report(40, 'Preparando los trazos y las sombras…')

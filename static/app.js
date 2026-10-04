@@ -40,6 +40,74 @@ const R = { cfg: null, geo: null, rend: {}, seq: {}, thumbs: {}, view: null, job
             viewport: { zoom: 1, x: 0, y: 0 }, canvasTool: '', marginSaving: false };
 
 let legacy = null;
+const AI = { token: 0, task: null, pending: null, busy: false, enabled: false };
+
+function invalidateAi() {
+  ++AI.token;
+  if (AI.task) api(`/api/ai/tasks/${AI.task}/cancel`, {}).catch(() => {});
+  AI.task = null; AI.pending = null; AI.busy = false;
+  $('#aiProposal').hidden = true; $('#aiCancel').hidden = true;
+  $('#aiAnalyze').disabled = !AI.enabled || !$('#aiModel').value;
+}
+async function refreshAiModels() {
+  invalidateAi(); const token = AI.token;
+  $('#aiRefresh').disabled = true; $('#aiAnalyze').disabled = true;
+  $('#aiStatus').textContent = 'Buscando modelos locales con visión…';
+  try {
+    const result = await api('/api/ai/models?provider=' + $('#aiProvider').value);
+    if (token !== AI.token) return;
+    $('#aiModel').replaceChildren(...(result.models.length ? result.models.map(name => new Option(name,name)) : [new Option('No hay modelos disponibles','')]));
+    $('#aiStatus').textContent = result.message;
+    $('#aiAnalyze').disabled = !AI.enabled || !result.available;
+  } catch (error) { if (token === AI.token) $('#aiStatus').textContent = error.message; }
+  finally { $('#aiRefresh').disabled = !AI.enabled; }
+}
+async function analyzeSelectedImage() {
+  const el = sel(); if (el?.type !== 'image' || !$('#aiModel').value) return;
+  invalidateAi(); const token = AI.token;
+  const imageId = el.imageId, cropKey = JSON.stringify(el.opts.crop ?? null);
+  AI.busy = true; $('#aiAnalyze').disabled = true; $('#aiCancel').hidden = false;
+  $('#aiStatus').textContent = 'Enviando la imagen a tu modelo local…';
+  try {
+    const started = await api('/api/ai/tasks', {image:imageId, crop:el.opts.crop, model:$('#aiModel').value,
+      provider:$('#aiProvider').value, goal:$('#aiGoal').value});
+    if (token !== AI.token) { api(`/api/ai/tasks/${started.task}/cancel`,{}).catch(()=>{}); return; }
+    AI.task = started.task;
+    const deadline = Date.now() + 240000;
+    while (token === AI.token) {
+      const task = await api(`/api/ai/tasks/${AI.task}`);
+      if (token !== AI.token) return;
+      $('#aiStatus').textContent = task.message;
+      if (task.state === 'done') {
+        AI.pending = {id:el.id,imageId,cropKey,result:task.result};
+        $('#aiReason').textContent = task.result.reason;
+        const o = task.result.opts, names={fotolinea:'Líneas limpias',retrato:'Retrato con sombras',puntillismo:'Puntillismo'};
+        $('#aiSettings').textContent = `${names[o.mode]} · detalle ${o.detail} % · limpieza ${o.photo_cleaning} % · sombras ${o.shade} % · contraste ${o.contrast} % · brillo ${o.brightness} %`;
+        $('#aiStatus').textContent = 'Análisis listo. Revisa la propuesta y aplícala si te sirve.';
+        $('#aiProposal').hidden = false; break;
+      }
+      if (['failed','canceled'].includes(task.state)) throw new Error(task.message);
+      if (Date.now() > deadline) throw new Error('El análisis tardó demasiado. Prueba otro modelo.');
+      await new Promise(resolve => setTimeout(resolve,700));
+    }
+  } catch (error) {
+    if (token === AI.token) { if (AI.task) api(`/api/ai/tasks/${AI.task}/cancel`,{}).catch(()=>{}); $('#aiStatus').textContent = error.message; }
+  } finally {
+    if (token === AI.token) { AI.task=null; AI.busy=false; $('#aiCancel').hidden=true; $('#aiAnalyze').disabled=!$('#aiModel').value; }
+  }
+}
+function applyAiAdvice() {
+  const el = sel(), proposal = AI.pending;
+  if (!proposal || el?.id !== proposal.id || el.imageId !== proposal.imageId || JSON.stringify(el.opts.crop ?? null) !== proposal.cropKey) {
+    invalidateAi(); toast('La imagen o el recorte cambió. Analízala de nuevo.',true); return;
+  }
+  flushHistory();
+  el.opts = {...el.opts,...proposal.result.opts};
+  el.colorMode = 'single';
+  el.pen = R.cfg.pens.map((p,i)=>({i,tone:p.color.slice(1).match(/../g).reduce((sum,v,k)=>sum+parseInt(v,16)*[.2126,.7152,.0722][k],0)})).sort((a,b)=>a.tone-b.tone)[0].i;
+  invalidateAi(); touch(el,true); syncPanel();
+  toast('Ajustes aplicados. Revisa el recorrido; Deshacer recupera el anterior.');
+}
 try {
   const saved = JSON.parse(localStorage.getItem('pluma-a1') || 'null');
   if (saved && Array.isArray(saved.elements)) Object.assign(S, saved);
@@ -65,6 +133,7 @@ function paintHistory() {
 }
 function flushHistory() { clearTimeout(historyTimer); history.record(S); paintHistory(); }
 function restoreDesign(state) {
+  invalidateAi();
   stopAnim(); clearTimeout(rotationTimer); ++composeSeq;
   for (const el of S.elements) {
     ++R.seq[el.id]; clearTimeout(timers[el.id]); delete resizeCenters[el.id];
@@ -205,6 +274,7 @@ function box(el) {
 }
 
 function select(id) {
+  if (id !== S.sel) invalidateAi();
   if (id !== null && R.over?.contact_test) {
     R.over = null; $('#contactTest').textContent = 'Probar apoyo'; compose();
   }
@@ -461,6 +531,7 @@ function paintImageOptions(el) {
   }
   $('input[data-opt="image.cross"]').closest('label').hidden = !hatch || (mode === 'retrato' && el.opts.portrait_style !== 'rayado');
   $('#portraitStyles').hidden = mode !== 'retrato';
+  $('input[data-opt="image.photo_simplify"]').closest('label').hidden = !['fotolinea','retrato'].includes(mode);
   $('[data-photo-mode]').classList.toggle('on', mode === 'fotolinea');
   $('[data-photo-mode]').setAttribute('aria-pressed', mode === 'fotolinea');
   $('#portraitMode').classList.toggle('on', mode === 'retrato');
@@ -1201,6 +1272,16 @@ async function init() {
   R.cfg = st.config; R.geo = st.geometry;
   R.asyncImages = !!st.features?.async_images;
   R.paperLayout = !!st.features?.paper_layout;
+  AI.enabled = !!st.features?.local_ai;
+  $('#aiRefresh').disabled = !AI.enabled;
+  if (!AI.enabled) $('#aiStatus').textContent = 'Reinicia Pluma A1 cuando termine el dibujo para activar la IA local.';
+  $('#aiRefresh').addEventListener('click',refreshAiModels);
+  $('#aiProvider').addEventListener('change',refreshAiModels);
+  $('#aiModel').addEventListener('change',invalidateAi);
+  $('#aiGoal').addEventListener('change',invalidateAi);
+  $('#aiAnalyze').addEventListener('click',analyzeSelectedImage);
+  $('#aiApply').addEventListener('click',applyAiAdvice);
+  $('#aiCancel').addEventListener('click',()=>{invalidateAi();$('#aiStatus').textContent='Análisis cancelado. Tu dibujo sigue intacto.';});
   $('#portraitMode').disabled = !st.features?.portrait;
   $('#stipplingMode').disabled = !st.features?.stippling;
   $('#editMargins').disabled = !R.paperLayout;
@@ -1210,7 +1291,7 @@ async function init() {
   }
   $('#openMotion').hidden = false;
   $('#openMotion').disabled = !st.features?.motion_settings;
-  $('#updateNotice').hidden = !!st.features?.motion_settings && !!st.features?.extended_images && R.paperLayout && !!st.features?.portrait && !!st.features?.stippling;
+  $('#updateNotice').hidden = !!st.features?.motion_settings && !!st.features?.extended_images && R.paperLayout && !!st.features?.portrait && !!st.features?.stippling && AI.enabled;
   $('#updateNotice').textContent = 'Actualización preparada: cuando termine el dibujo, cierra la terminal de Pluma A1 y vuelve a abrir Iniciar Pluma A1.bat. Después recarga esta página para activar las herramientas nuevas.';
   paintMotion();
   $('#appVersion').textContent = st.app_version ? `Versión ${st.app_version}` : 'Versión anterior: reinicia la terminal para cargar las mejoras';
