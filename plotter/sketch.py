@@ -146,7 +146,7 @@ def _photo_lines(g, detail, cleaning, ppm):
             for p in _trace(edges) if pathops.length(p) >= minimum]
 
 
-def _hatch_layer(dark, thr, angle, spacing, offset, ppm, rng):
+def _hatch_layer(dark, thr, angle, spacing, offset, ppm, rng, minimum_mm=1.2, steady=False):
     """Líneas paralelas donde la oscuridad supera thr, con pulso de lápiz."""
     H, W = dark.shape
     a = math.radians(angle)
@@ -155,13 +155,13 @@ def _hatch_layer(dark, thr, angle, spacing, offset, ppm, rng):
     c = np.array([W / 2, H / 2])
     half = math.hypot(W, H) / 2
     t = np.arange(-half, half, 1.0)
-    min_run = max(3, int(1.2 * ppm))
+    min_run = max(3, int(minimum_mm * ppm))
     out = []
     flip = False
     o = -half + offset
     while o < half:
-        jit = rng.normal(0, 0.1 * spacing)
-        da = math.radians(rng.normal(0, 1.2))
+        jit = 0 if steady else rng.normal(0, 0.1 * spacing)
+        da = 0 if steady else math.radians(rng.normal(0, 1.2))
         dd = np.array([math.cos(a + da), math.sin(a + da)])
         pts = c + n * (o + jit) + t[:, None] * dd
         xi = np.rint(pts[:, 0]).astype(int)
@@ -175,8 +175,11 @@ def _hatch_layer(dark, thr, angle, spacing, offset, ppm, rng):
             if e - s < min_run:
                 continue
             p0, p1 = pts[s], pts[e - 1]
-            mid = (p0 + p1) / 2 + n * rng.normal(0, 0.12 * ppm)
-            runs.append(np.array([p0, mid, p1]))
+            if steady:
+                runs.append(np.clip(np.array([p0, p1]), [0, 0], [W - 1, H - 1]))
+            else:
+                mid = (p0 + p1) / 2 + n * rng.normal(0, 0.12 * ppm)
+                runs.append(np.array([p0, mid, p1]))
         if flip:
             runs = [r[::-1] for r in runs[::-1]]
         if runs:
@@ -203,6 +206,93 @@ def _hatch(dark, o, ppm, rng, turn=0.0):
     out = []
     for thr, a, off in layers:
         out.extend(_hatch_layer(dark, thr - shift, a, sp, off, ppm, rng))
+    return out
+
+
+def _portrait_dither(tone, angle, spacing, report):
+    """Error-diffused short strokes; long dark runs remain continuous.
+
+    Sample in the chosen drawing direction. The diffusion conserves local tone
+    instead of treating every gray area as one outline or one solid block.
+    """
+    H, W = tone.shape
+    # Never sample finer than the source raster: bounds memory for tall crops.
+    spacing = max(1., spacing)
+    a = math.radians(angle)
+    d, n = np.array([math.cos(a), math.sin(a)]), np.array([-math.sin(a), math.cos(a)])
+    count = int(math.ceil(math.hypot(W, H) / spacing)) + 2
+    axis = (np.arange(count) - (count - 1) / 2) * spacing
+    col, row = np.meshgrid(axis, axis)
+    center = np.array([(W - 1) / 2, (H - 1) / 2])
+    xx = center[0] + col * d[0] + row * n[0]
+    yy = center[1] + col * d[1] + row * n[1]
+    sampled = cv2.remap(tone, xx.astype(np.float32), yy.astype(np.float32),
+                        cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+    values = sampled.astype(np.float64)
+    ink = np.zeros_like(values, dtype=bool)
+    for y in range(count):
+        if y % 16 == 0:
+            report(40 + int(23 * y / count), 'Conservando los tonos suaves del retrato…')
+        step = 1 if y % 2 == 0 else -1
+        for x in range(count) if step == 1 else range(count - 1, -1, -1):
+            black = values[y, x] >= .5 and sampled[y, x] > 0
+            ink[y, x] = black
+            error = values[y, x] - float(black)
+            ahead = x + step
+            if 0 <= ahead < count:
+                values[y, ahead] += error * 7 / 16
+            if y + 1 < count:
+                values[y + 1, x] += error * 5 / 16
+                if 0 <= x - step < count:
+                    values[y + 1, x - step] += error * 3 / 16
+                if 0 <= ahead < count:
+                    values[y + 1, ahead] += error / 16
+    paths = []
+    for y, line in enumerate(ink):
+        edges = np.flatnonzero(np.diff(np.concatenate([[False], line, [False]]).astype(np.int8)))
+        runs = []
+        for start, end in zip(edges[::2], edges[1::2]):
+            p = center + axis[y] * n + np.array([axis[start] - .45 * spacing,
+                                                axis[end - 1] + .45 * spacing])[:, None] * d
+            p = np.clip(p, [0, 0], [W - 1, H - 1])
+            if np.linalg.norm(p[1] - p[0]) > 1e-6:
+                runs.append(p)
+        paths.extend(runs if y % 2 == 0 else [p[::-1] for p in runs[::-1]])
+    return paths
+
+
+def _portrait_hatch(dark, o, ppm, rng, report, turn=0):
+    """Twelve interleaved tone levels, with denser lines only in dark regions.
+
+    White paper stays empty. Soft face tones and deep shadows remain distinct;
+    the secondary direction is reserved for darker tones, not the whole face.
+    These are actual pen paths, not a raster overlay in the preview.
+    """
+    cleaning = min(3, float(o.get('photo_cleaning', 85)) / 100)
+    dark = cv2.GaussianBlur(dark.astype(np.float32), (0, 0), .7 + cleaning)
+    floor = .012 + .025 * min(cleaning, 1)
+    tone = np.clip((dark - floor) / (1 - floor), 0, 1)
+    strength = float(o.get('shade', 100)) / 100
+    if strength <= 0:
+        return []
+    soft = o.get('portrait_style', 'suave') == 'suave'
+    tone = np.power(tone, (.95 if soft else .72) / max(.2, strength))
+    spacing = float(o.get('hatch_spacing', .45)) * ppm
+    angle = float(o.get('hatch_angle', 45)) + turn
+    if soft:
+        return _portrait_dither(tone, angle, spacing, report)
+    # Distribute low-tone lines evenly instead of grouping them in stripes.
+    order = (0, 8, 4, 10, 2, 6, 1, 9, 5, 11, 3, 7)
+    directions = [(tone, angle)]
+    if o.get('cross', True):
+        directions.append((np.clip((tone - .4) / .6, 0, 1), angle + 90))
+    out = []
+    for direction, (density, a) in enumerate(directions):
+        for phase, rank in enumerate(order):
+            report(40 + int(23 * (direction * 12 + phase) / (12 * len(directions))),
+                   'Conservando los tonos del retrato con líneas de sombra…')
+            out.extend(_hatch_layer(density, (rank + .5) / 12, a, 12 * spacing,
+                                    phase * spacing, ppm, rng, minimum_mm=.35, steady=True))
     return out
 
 
@@ -252,21 +342,25 @@ def make_sketch(rgb, o, width_mm, pens=None, progress=None, cancelled=None):
     rng = np.random.default_rng(int(o.get("seed", 1)))
     mode = o.get("mode", "boceto")
     report(20, 'Convirtiendo la imagen en líneas…')
-    if mode not in ('boceto', 'contornos', 'rayado', 'trazo', 'fotolinea'):
+    if mode not in ('boceto', 'contornos', 'rayado', 'trazo', 'fotolinea', 'retrato'):
         raise ValueError('Elige un estilo de dibujo válido.')
+    if mode == 'retrato' and o.get('portrait_style', 'suave') not in ('suave', 'rayado'):
+        raise ValueError('Elige tonos suaves o rayado para el retrato.')
     lines = _contours(g, float(o.get("detail", 55)) / 100.0, ppm) if mode in ("boceto", "contornos") else []
     if mode == 'trazo':
         threshold = float(o.get('threshold', 160))
         if not math.isfinite(threshold) or not 1 <= threshold <= 254:
             raise ValueError('El umbral del trazo debe estar entre 1 y 254.')
         lines = _centerlines(g, float(o.get('detail', 55)) / 100.0, ppm, threshold)
-    if mode == 'fotolinea':
+    if mode in ('fotolinea', 'retrato'):
         detail, cleaning = float(o.get('detail', 65)), float(o.get('photo_cleaning', 65))
-        lines = _photo_lines(g, detail / 100, cleaning / 100, ppm)
+        source = cv2.GaussianBlur(g, (0, 0), .8) if mode == 'retrato' else g
+        lines = _photo_lines(source, detail / 100, cleaning / 100, ppm)
     layers = {}
     if not pens or len(pens) < 2:
         report(40, 'Preparando los trazos y las sombras…')
-        hatch = _hatch(1.0 - g / 255.0, o, ppm, rng) if mode in ("boceto", "rayado") else []
+        hatch = (_portrait_hatch(1.0 - g / 255.0, o, ppm, rng, report) if mode == 'retrato'
+                 else _hatch(1.0 - g / 255.0, o, ppm, rng) if mode in ("boceto", "rayado") else [])
         report(65, 'Ordenando el recorrido de la pluma…')
         layers[0] = pathops.nn_order(hatch, cancelled=cancelled) + pathops.nn_order(lines, cancelled=cancelled)
     else:
@@ -280,7 +374,8 @@ def make_sketch(rgb, o, width_mm, pens=None, progress=None, cancelled=None):
         darkest = int(pal_lab[:, 0].argmin())  # los contornos van con la pluma más oscura
         for k in range(len(pens)):
             report(40 + int(50 * k / len(pens)), f'Preparando los trazos del color {k + 1} de {len(pens)}…')
-            hatch = _hatch(ink * (near == k), o, ppm, rng, turn=25.0 * k) if mode in ("boceto", "rayado") else []
+            hatch = (_portrait_hatch(ink * (near == k), o, ppm, rng, report, turn=25.0 * k) if mode == 'retrato'
+                     else _hatch(ink * (near == k), o, ppm, rng, turn=25.0 * k) if mode in ("boceto", "rayado") else [])
             paths = pathops.nn_order(hatch, cancelled=cancelled) + (pathops.nn_order(lines, cancelled=cancelled) if k == darkest else [])
             if paths:
                 layers[k] = paths

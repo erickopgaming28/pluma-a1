@@ -42,7 +42,7 @@ try {
     const canceled = [];
     function convert(body) {
       conversions.push(body);
-      const sample = structuredClone(body.type === 'image' ? imageFixtures[(body.opts.mode === 'fotolinea' ? 'contornos' : body.opts.mode || 'boceto') + '-' + (body.opts.crop?.w === .5 ? 'middle' : 'full')] : fixture.text);
+      const sample = structuredClone(body.type === 'image' ? imageFixtures[(['fotolinea','retrato'].includes(body.opts.mode) ? 'contornos' : body.opts.mode || 'boceto') + '-' + (body.opts.crop?.w === .5 ? 'middle' : 'full')] : fixture.text);
       const ratio = body.w / sample.w;
       if (body.type === 'image') {
         sample.h *= ratio;
@@ -57,7 +57,7 @@ try {
       const url = new URL(route.request().url());
       const endpoint = url.pathname;
       let data;
-      if (endpoint === '/api/state') data = { ...fixture.state, geometry: editorGeometry(), config: { ...fixture.state.config, paper: editorPaper, pen: motionPen }, app_version: '2026.10.03.15', features: { async_images: true, motion_settings: motionSettingsSupported, extended_images: true, paper_layout: true } };
+      if (endpoint === '/api/state') data = { ...fixture.state, geometry: editorGeometry(), config: { ...fixture.state.config, paper: editorPaper, pen: motionPen }, app_version: '2026.10.03.16', features: { async_images: true, motion_settings: motionSettingsSupported, extended_images: true, paper_layout: true, portrait: motionSettingsSupported } };
       else if (endpoint === '/api/paper-layout') {
         const value = route.request().postDataJSON().margins;
         savedMargins.push(value); editorPaper.margins = value;
@@ -294,7 +294,7 @@ try {
     assert.ok(canceled.includes(obsolete));
     assert.equal(conversions.at(-1).opts.mode, 'trazo');
     assert.ok(!compositions.at(-1).items.some(it => it.render_id === tasks.get(obsolete).result.render_id));
-    assert.equal(await page.locator('#appVersion').textContent(), 'Versión 2026.10.03.15');
+    assert.equal(await page.locator('#appVersion').textContent(), 'Versión 2026.10.03.16');
     await page.locator('[data-photo-mode]').click();
     await page.waitForFunction(() => !document.querySelector('#send').disabled && document.querySelector('#busy').hidden);
     assert.equal(conversions.at(-1).opts.mode, 'fotolinea');
@@ -371,6 +371,22 @@ try {
     await page.waitForFunction(() => document.querySelector('#busy').hidden && !document.querySelector('#editMargins').disabled);
     assert.equal(savedMargins.at(-1),null);
     await page.locator('#editMargins').click();
+    await page.locator('#portraitMode').click();
+    await page.waitForFunction(() => document.querySelector('#busy').hidden && !document.querySelector('#send').disabled);
+    const portraitOptions = conversions.at(-1).opts;
+    assert.equal(portraitOptions.mode, 'retrato');
+    assert.equal(portraitOptions.portrait_style, 'suave');
+    assert.equal(portraitOptions.brightness, 0); assert.equal(portraitOptions.contrast,0);
+    assert.equal(portraitOptions.hatch_spacing,.35); assert.equal(conversions.at(-1).pen,1);
+    assert.equal(+await page.locator('[data-k="hatch_spacing"]').getAttribute('step'), .05);
+    assert.equal(+await page.locator('[data-k="hatch_spacing"]').evaluate(el=>el.value),.35);
+    assert.ok(await page.locator('#portraitStyles').isVisible());
+    assert.ok(!await page.locator('[data-opt="image.cross"]').isVisible());
+    await page.screenshot({path:path.join(root,'tests/artifacts/retrato-editor-'+name+'.png'),fullPage:name==='movil'});
+    await page.locator('[data-opt="image.portrait_style"] [data-v="rayado"]').click();
+    assert.ok(await page.locator('[data-opt="image.cross"]').isVisible());
+    await page.waitForTimeout(300);
+    assert.equal(conversions.at(-1).opts.portrait_style,'rayado');
     await page.locator('[data-photo-mode]').click();
     await page.waitForFunction(() => document.querySelector('#busy').hidden && !document.querySelector('#send').disabled);
     await page.screenshot({ path: path.join(root, 'tests/artifacts/foto-lineas-' + name + '.png'), fullPage: name === 'movil' });
@@ -387,6 +403,7 @@ try {
     await page.reload();
     await page.waitForFunction(() => !document.querySelector('#send').disabled);
     assert.ok(await page.locator('#openMotion').isDisabled());
+    assert.ok(await page.locator('#portraitMode').isDisabled());
     assert.ok(await page.locator('#updateNotice').isVisible());
     console.log(name + ': rotación, medidas, recorte, estilos, guardado y conversión con progreso/cancelación verificados; sin impresora.');
     await context.close();

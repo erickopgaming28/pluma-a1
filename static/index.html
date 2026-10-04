@@ -8,7 +8,7 @@
 <meta name="theme-color" content="#2743b8">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
-<link rel="stylesheet" href="style.css?v=20261003-editor">
+<link rel="stylesheet" href="style.css?v=20261003-retrato">
 </head>
 <body>
 <header class="top">
@@ -97,8 +97,14 @@
           <button data-v="trazo">Una línea</button><button data-v="contornos">Sólo bordes</button><button data-v="boceto">Boceto</button><button data-v="rayado">Sombreado</button>
         </div>
         <button class="btn wide photo-mode" type="button" data-photo-mode>Foto a líneas</button>
+        <button id="portraitMode" class="btn wide photo-mode" type="button" aria-pressed="false">Retrato con sombras</button>
       </div>
       <p id="imageModeHint" class="hint" role="status"></p>
+      <div id="portraitStyles" class="field" hidden>
+        <span class="lbl">Acabado del retrato</span>
+        <div class="seg" data-opt="image.portrait_style"><button data-v="suave">Tonos suaves</button><button data-v="rayado">Rayado</button></div>
+        <p class="hint">Tonos suaves conserva grises mediante trazos cortos. Rayado usa líneas largas y suele terminar antes. La vista previa supone una punta de 0.3 mm; el resultado cambia según el lápiz, la pluma y su apoyo.</p>
+      </div>
       <div id="imageSliders"></div>
       <p id="extendedHint" class="hint extended-hint" hidden>Valor extra: supera el 100 %. Puede recuperar detalle o aumentar el ruido y el tiempo de dibujo.</p>
       <label class="check"><input type="checkbox" data-opt="image.cross"> Rayado cruzado</label>
@@ -418,6 +424,6 @@
 
 <div id="toast" class="toast" role="status" popover="manual"></div>
 <!-- type=module: las variables del programa no chocan con las que inyectan las extensiones del navegador -->
-<script type="module" src="app.js?v=20261003-editor"></script>
+<script type="module" src="app.js?v=20261003-retrato"></script>
 </body>
 </html>

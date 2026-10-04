@@ -22,7 +22,7 @@ Pluma A1 convierte texto e imágenes en recorridos de pluma para una Bambu Lab A
 
 El editor separa la creación del diseño, la preparación de la A1 y el envío. Puedes mover los elementos libremente, incluso fuera de la hoja; el envío se bloquea mientras haya trazos fuera del alcance de la pluma. Puedes plegar **Posición, tamaño y rotación** para concentrarte en el texto o la imagen. La vista previa muestra las dimensiones de tu hoja y la interfaz se adapta a computadora, celular y al tema claro u oscuro del sistema.
 
-> **Estado:** proyecto experimental. Hay 95 pruebas del motor y revisión del editor en escritorio y móvil. Incluyen una imagen de 4000 × 4000 píxeles convertida, rotada, exportada y transmitida íntegramente a un receptor de prueba. El usuario observó dibujos con tinta desigual entre zonas y pausas durante la escritura; la uniformidad de contacto, fluidez y precisión todavía requieren comprobación física. Las capturas usan diseños de prueba, sin conexión a una impresora.
+> **Estado:** proyecto experimental. Hay 102 pruebas del motor y revisión del editor en escritorio y móvil. Incluyen una imagen de 4000 × 4000 píxeles convertida, rotada, exportada y transmitida íntegramente a un receptor de prueba. El usuario observó dibujos con tinta desigual entre zonas y pausas durante la escritura; la uniformidad de contacto, fluidez y precisión todavía requieren comprobación física. Las capturas usan diseños de prueba, sin conexión a una impresora.
 
 ## Crear tu diseño
 
@@ -32,6 +32,7 @@ El editor separa la creación del diseño, la preparación de la A1 y el envío.
 | **Dibujar con una línea** | Sigue el centro de las franjas oscuras, sin contorno doble ni sombreado. |
 | **Elegir el acabado** | Una línea, sólo bordes, boceto o sombreado por rayado. |
 | **Convertir fotografías** | Foto a líneas conserva cambios de tono sin sombreado, con limpieza de textura ajustable. |
+| **Dibujar retratos con sombras** | Tonos suaves mediante trazos cortos o rayado con doce niveles de densidad; conserva volumen y zonas oscuras. |
 | **Comprobar el apoyo** | Prepara nueve cruces repartidas entre las zonas trasera, central y frontal. |
 | **Recortar imágenes** | Marco arrastrable, esquinas, porcentajes y encuadres rápidos. |
 | **Componer la hoja** | Mueve, duplica, redimensiona y rota cada texto o imagen. |
@@ -45,7 +46,7 @@ El editor separa la creación del diseño, la preparación de la A1 y el envío.
 
 ### Recorta antes de dibujar
 
-El recorte cambia los trazos reales que recibe la pluma. Puedes ajustar el encuadre y volver al original mientras siga cargado en el servidor.
+El recorte cambia los trazos reales que recibe la pluma. Puedes ajustar el encuadre y volver al original. Las nuevas imágenes cargadas se conservan en la caché privada local `.image-cache`, excluida de Git, para recuperarlas al reiniciar el servidor. Las imágenes de versiones anteriores a esta caché deben cargarse una vez más. La caché guarda la imagen de trabajo, con un lado máximo de 1600 píxeles; el archivo de origen no se modifica.
 
 ![Recorte de una imagen con marco y controles de porcentaje](docs/assets/recorte.png)
 
@@ -55,7 +56,16 @@ El recorte cambia los trazos reales que recibe la pluma. Puedes ajustar el encua
 
 Los porcentajes de imagen admiten un rango ampliado: detalle, limpieza y sombreado de 0 a 300 %, contraste de −99 a 300 % y brillo de −300 a 300 %. Al superar el 100 % en magnitud, se muestran en rojo con «extra». Un ajuste elevado puede recuperar líneas tenues o aumentar ruido, trazos y tiempo de preparación. La oscuridad de **Una línea** usa un umbral de gris de 1 a 254, no un porcentaje. El rayado admite separación de 0.3 a 10 mm y ángulo de −360 a 360°.
 
-**Restablecer ajustes del dibujo** conserva el encuadre y la colocación. **Restablecer imagen original** también elimina el recorte y recupera la colocación, tamaño, giro y color iniciales de ese elemento. En diseños guardados antes de esta función, la colocación existente al cargarlos se toma como punto inicial; no hay un historial anterior de posiciones. Los originales siguen disponibles mientras estén cargados en el servidor.
+### Retratos y tonos de lápiz
+
+**Sólo bordes** y **Foto a líneas** dejan zonas claras vacías: no representan el volumen de las mejillas, la nariz o el cuello mediante tonos. Para eso usa **Retrato con sombras**. El botón prepara brillo y contraste en cero, detalle 70 %, limpieza 85 %, sombreado 100 % y separación 0.35 mm; selecciona la pluma más oscura y conserva el recorte y la colocación.
+
+- **Tonos suaves** conserva el tono local mediante difusión de error y pequeños trazos orientados. Los tramos oscuros contiguos se unen. Da mayor parecido tonal, con muchas más levantadas.
+- **Rayado** intercala doce niveles de líneas y añade una segunda dirección en tonos oscuros si activas el rayado cruzado. Tiene un acabado de líneas más visible y suele necesitar menos levantadas.
+
+Ambos generan recorridos reales exportables, con progreso y cancelación. La difusión no muestrea más fino que los píxeles de trabajo, para limitar memoria incluso en recortes muy alargados. La vista previa del retrato supone una punta de 0.3 mm; no cambia el grosor ni la presión física del instrumento. La A1 mantiene una altura de apoyo fija y aproxima el gris mediante densidad de líneas, así que no reproduce exactamente el sombreado manual del grafito. Revisa el tiempo estimado: un retrato detallado puede requerir horas por las subidas y bajadas de la punta.
+
+**Restablecer ajustes del dibujo** conserva el encuadre y la colocación. **Restablecer imagen original** también elimina el recorte y recupera la colocación, tamaño, giro y color iniciales de ese elemento. En diseños guardados antes de esta función, la colocación existente al cargarlos se toma como punto inicial; no hay un historial anterior de posiciones.
 
 Activa **Editar márgenes** y arrastra los tiradores del centro de los cuatro bordes; también puedes escribir cada margen. Se guardan para los siguientes dibujos, conservando las alturas y la calibración. **Restablecer márgenes** recupera el margen uniforme definido en Ajustes. Estas guías no amplían el alcance físico: puedes colocar elementos fuera de ellas, pero el servidor rechaza cualquier trazo fuera de la zona alcanzable.
 

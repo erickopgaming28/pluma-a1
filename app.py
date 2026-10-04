@@ -21,8 +21,9 @@ from plotter import fonts, gcode, handwriting, pathops, printer, sketch, stream,
 
 ROOT = Path(__file__).resolve().parent
 CONFIG_FILE = ROOT / "config.json"
+IMAGE_CACHE = ROOT / '.image-cache'
 PORT = 8765
-APP_VERSION = '2026.10.03.15'
+APP_VERSION = '2026.10.03.16'
 WORKSPACE_ID = str(uuid.uuid5(uuid.NAMESPACE_URL, str(ROOT).casefold()))
 
 DEFAULT_CONFIG = {
@@ -182,7 +183,7 @@ def api_state():
     for fid, label in fonts.CATALOG:
         font_list.append({"id": fid, "label": label, "sample": font_sample(fonts.get_font(fid))})
     return jsonify({"config": public_config(), "fonts": font_list, "geometry": geometry(),
-                    'app_version': APP_VERSION, 'features': {'async_images': True, 'motion_settings': True, 'extended_images': True, 'paper_layout': True},
+                    'app_version': APP_VERSION, 'features': {'async_images': True, 'motion_settings': True, 'extended_images': True, 'paper_layout': True, 'portrait': True},
                     "paper_sizes": gcode.PAPER_SIZES, "lan_url": lan_url()})
 
 
@@ -296,14 +297,36 @@ def api_image_upload():
         raise ValueError("No pude abrir ese archivo como imagen.")
     image_id = uuid.uuid4().hex[:10]
     images[image_id] = {"rgb": rgb, "name": Path(f.filename or "imagen").stem}
+    # Private local cache preserves originals across a server update/restart.
+    from PIL import Image
+    IMAGE_CACHE.mkdir(exist_ok=True)
+    target = IMAGE_CACHE / (image_id + '.png')
+    temporary = target.with_suffix('.tmp')
+    Image.fromarray(rgb).save(temporary, format='PNG')
+    temporary.replace(target)
     while len(images) > 12:
         images.pop(next(iter(images)))
     return jsonify({"id": image_id, "width": rgb.shape[1], "height": rgb.shape[0]})
 
 
+def get_image(image_id):
+    item = images.get(image_id)
+    if item is None and isinstance(image_id, str) and re.fullmatch(r'[0-9a-f]{10}', image_id):
+        target = IMAGE_CACHE / (image_id + '.png')
+        if target.is_file():
+            try:
+                item = {'rgb': sketch.load_image(target.read_bytes()), 'name': 'imagen'}
+                images[image_id] = item
+                while len(images) > 12:
+                    images.pop(next(iter(images)))
+            except (OSError, ValueError):
+                return None
+    return item
+
+
 @app.get('/api/image/<image_id>/preview')
 def api_image_preview(image_id):
-    item = images.get(image_id)
+    item = get_image(image_id)
     if not item:
         return jsonify(error='Vuelve a cargar la imagen: el programa ya no conserva el original.'), 404
     from PIL import Image
@@ -317,7 +340,7 @@ def api_image_preview(image_id):
 def api_image():
     d = request.get_json(force=True)
     o = d.get("opts", {})
-    item = images.get(d.get("id"))
+    item = get_image(d.get("id"))
     if not item:
         raise ValueError("Vuelve a cargar la imagen.")
     rgb = item["rgb"]
@@ -370,7 +393,7 @@ def _convert_element(d, cfg=None, progress=None, cancelled=None):
     pen = int(d.get("pen", 0))
     w = min(max(float(d.get("w") or area_w), 15.0), 400.0)
     if d.get("type") == "image":
-        item = images.get(d.get("image"))
+        item = get_image(d.get("image"))
         if not item:
             raise ValueError("Vuelve a cargar la imagen.")
         layers, h = sketch.make_sketch(item["rgb"], o, w, [p["color"] for p in cfg["pens"]] if multi else None,
@@ -392,7 +415,8 @@ def _convert_element(d, cfg=None, progress=None, cancelled=None):
     for i in sorted(layers):
         info = pen_info(i, cfg)
         view.append({"pen": i, "name": info["name"], "color": info["color"], "paths": pathops.to_flat(layers[i])})
-    return {"w": w, "h": h, "layers": view, "render_id": render_id}
+    return {"w": w, "h": h, "layers": view, "render_id": render_id,
+            'preview_width': .3 if d.get('type') == 'image' and o.get('mode') == 'retrato' else .42}
 
 
 @app.post("/api/compose")
