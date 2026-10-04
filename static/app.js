@@ -864,6 +864,7 @@ function readSettings() {
 async function saveConfig(data, quiet) {
   const r = await api('/api/config', data);
   R.cfg = r.config; R.geo = r.geometry;
+  paintMotion();
   R.penReady = false;
   if (R.sent?.kind === 'adjust') R.sent.calibrationInvalidated = true;
   syncPanel();
@@ -873,11 +874,47 @@ async function saveConfig(data, quiet) {
   if (!quiet) toast('Ajustes guardados.');
 }
 
+/* ---------- velocidad del próximo dibujo; conserva el ajuste físico ---------- */
+function paintMotion() {
+  $('#openMotion').textContent = `Velocidad · ${R.cfg.pen.draw_speed} mm/s`;
+}
+function openMotion() {
+  for (const input of $$('[data-motion]')) input.value = R.cfg.pen[input.dataset.motion];
+  $('#motionError').hidden = true;
+  $('#motionDlg').showModal();
+}
+async function saveMotion() {
+  const form = $('#motionDlg form');
+  // Los campos avanzados se abren si requieren una corrección con teclado.
+  if ($$('[data-motion]').some(input => !input.validity.valid)) {
+    $('.motion-advanced').open = true;
+    form.reportValidity(); return;
+  }
+  const button = $('#saveMotion'); button.disabled = true;
+  $('#motionError').hidden = true;
+  try {
+    const data = Object.fromEntries($$('[data-motion]').map(input => [input.dataset.motion, input.valueAsNumber]));
+    const result = await api('/api/motion-settings', data);
+    Object.assign(R.cfg.pen, result.pen);
+    paintMotion();
+    $('#motionDlg').close();
+    await compose();
+    toast('Velocidad guardada para el próximo dibujo.');
+  } catch (error) {
+    $('#motionError').textContent = error.message; $('#motionError').hidden = false;
+  } finally { button.disabled = false; }
+}
+
 /* ---------- arranque ---------- */
 async function init() {
   const st = await api('/api/state');
   R.cfg = st.config; R.geo = st.geometry;
   R.asyncImages = !!st.features?.async_images;
+  $('#openMotion').hidden = false;
+  $('#openMotion').disabled = !st.features?.motion_settings;
+  $('#updateNotice').hidden = !!st.features?.motion_settings;
+  $('#updateNotice').textContent = 'Actualización preparada: cuando termine el dibujo, cierra la terminal de Pluma A1 y vuelve a abrir Iniciar Pluma A1.bat. Después recarga esta página para activar el envío mejorado y los controles de velocidad.';
+  paintMotion();
   $('#appVersion').textContent = st.app_version ? `Versión ${st.app_version}` : 'Versión anterior: reinicia la terminal para cargar las mejoras';
   $('#lanUrl').textContent = st.lan_url || 'no disponible (sin red local)';
 
@@ -1077,6 +1114,15 @@ async function init() {
   });
 
   $('#openSettings').addEventListener('click', openSettings);
+  $('#openMotion').addEventListener('click', openMotion);
+  $('#saveMotion').addEventListener('click', saveMotion);
+  $('#motionDlg form').addEventListener('submit', e => {
+    if (e.submitter?.value !== 'cancel') { e.preventDefault(); saveMotion(); }
+  });
+  for (const button of $$('[data-motion-profile]')) button.addEventListener('click', () => {
+    const values = { gentle: [20, 60, 10, 1000], normal: [40, 150, 20, 2500], fast: [60, 180, 20, 2500] }[button.dataset.motionProfile];
+    ['draw_speed', 'travel_speed', 'z_speed', 'accel'].forEach((key, i) => $(`[data-motion="${key}"]`).value = values[i]);
+  });
   $('#printerPill').addEventListener('click', openSettings);
   $('[data-cfg="paper.size"]').addEventListener('change', e => ($('.custom-size').hidden = e.target.value !== 'custom'));
   $('#pensEdit').addEventListener('input', e => { const { i, f } = e.target.dataset; if (f) pensDraft[i][f] = e.target.value; });

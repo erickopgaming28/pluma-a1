@@ -67,6 +67,13 @@ main { flex: 1; min-height: 0; display: grid; grid-template-columns: 360px minma
 .workspace-heading h2 { margin: 0; font-size: 1rem; font-weight: 650; }
 .workspace-heading p { margin: var(--space-1) 0 0; color: var(--muted); font-size: .75rem; }
 .paper-info { color: var(--muted); font-size: .8125rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.workspace-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-3); }
+.workspace-actions .btn { font-size: .8125rem; }
+.motion-presets { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2); margin-block: var(--space-5); }
+.motion-advanced summary { cursor: pointer; min-height: 44px; font-weight: 600; }
+.motion-advanced[open] summary { margin-bottom: var(--space-3); }
+.motion-dlg > .hint { margin-top: 0; font-size: .875rem; }
+.update-notice { margin: 0; padding: var(--space-3) var(--space-5); background: var(--ink-soft); color: var(--ink); font-size: .8125rem; }
 .preflight { color: var(--text); background: var(--surface-2); padding: 14px; border-radius: 12px; line-height: 1.6; }
 .transport-hint { margin: -10px 0 22px; font-size: 14px; line-height: 1.5; }
 .operation-error { color: var(--bad); background: var(--surface-2); padding: 12px 14px; border-radius: 10px; overflow-wrap: anywhere; }
@@ -257,6 +264,7 @@ legend { font-weight: 600; padding: 0 6px; }
   .workspace-heading { padding: var(--space-4); }
   .workspace-heading p { max-width: 25ch; }
   .paper-info { font-size: .75rem; }
+  .workspace-actions { flex-direction: column; align-items: flex-end; gap: var(--space-2); }
   .stage { min-height: 0; }
   .panel { padding: var(--space-6) var(--space-5); }
   .preparation { padding: var(--space-3) var(--space-4); }

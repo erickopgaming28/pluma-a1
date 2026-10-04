@@ -8,7 +8,7 @@
 <meta name="theme-color" content="#2743b8">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
-<link rel="stylesheet" href="style.css?v=20261003-design">
+<link rel="stylesheet" href="style.css?v=20261003-14">
 </head>
 <body>
 <header class="top">
@@ -124,8 +124,9 @@
   <section class="stage" aria-label="Vista previa del dibujo">
     <div class="workspace-heading">
       <div><h2>Tu hoja</h2><p>Vista previa del recorrido de la pluma</p></div>
-      <span id="paperInfo" class="paper-info"></span>
+      <div class="workspace-actions"><span id="paperInfo" class="paper-info"></span><button id="openMotion" class="btn ghost" type="button" hidden>Velocidad</button></div>
     </div>
+    <p id="updateNotice" class="update-notice" role="status" hidden></p>
     <div id="banner" class="banner" hidden></div>
     <div class="canvas-wrap"><canvas id="cv"></canvas><div id="busy" class="busy" role="status" hidden>Convirtiendo…</div></div>
     <details class="preparation" open>
@@ -147,6 +148,26 @@
     </footer>
   </section>
 </main>
+
+<dialog id="motionDlg" aria-labelledby="motionTitle">
+  <form method="dialog" class="dlg motion-dlg">
+    <h2 id="motionTitle">Velocidad del dibujo</h2>
+    <p class="hint">Se aplica al próximo dibujo. El trabajo en curso conserva su velocidad. Más velocidad puede reducir el detalle o el contacto de la punta.</p>
+    <div class="motion-presets" aria-label="Perfiles de velocidad">
+      <button class="btn" type="button" data-motion-profile="gentle">Suave</button>
+      <button class="btn" type="button" data-motion-profile="normal">Normal</button>
+      <button class="btn" type="button" data-motion-profile="fast">Rápido</button>
+    </div>
+    <label class="field"><span class="lbl">Al dibujar (mm/s)</span><input data-motion="draw_speed" type="number" min="1" max="80" step="1" required></label>
+    <label class="field"><span class="lbl">Al viajar con la punta levantada (mm/s)</span><input data-motion="travel_speed" type="number" min="1" max="200" step="1" required></label>
+    <details class="motion-advanced"><summary>Elevación y aceleración</summary>
+      <label class="field"><span class="lbl">Al subir y bajar la punta (mm/s)</span><input data-motion="z_speed" type="number" min="1" max="30" step="1" required></label>
+      <label class="field"><span class="lbl">Aceleración (mm/s²)</span><input data-motion="accel" type="number" min="100" max="3000" step="100" required></label>
+    </details>
+    <p id="motionError" class="operation-error" role="alert" hidden></p>
+    <div class="dlg-actions"><button class="btn ghost" value="cancel" formnovalidate>Cancelar</button><span class="grow"></span><button id="saveMotion" class="btn primary" type="button">Guardar velocidad</button></div>
+  </form>
+</dialog>
 
 <dialog id="cropDlg" aria-labelledby="cropTitle">
   <form method="dialog" class="dlg crop-dlg" novalidate>
@@ -340,7 +361,7 @@
         <button id="gentleProfile" class="btn wide" type="button">Usar velocidades para primera prueba</button>
         <label class="row"><span>Posición de la pluma respecto a la boquilla, X / Y (mm)</span><span class="pair"><input data-cfg="pen.offset_x" type="number" step="0.5"><input data-cfg="pen.offset_y" type="number" step="0.5"></span></label>
         <label class="row"><span>Altura al escribir / al viajar (mm)</span><span class="pair"><input data-cfg="pen.z_down" type="number" step="0.1" min="0.5"><input data-cfg="pen.z_up" type="number" step="0.1"></span></label>
-        <label class="row"><span>Velocidad al escribir / al viajar (mm/s)</span><span class="pair"><input data-cfg="pen.draw_speed" type="number" step="5" min="5"><input data-cfg="pen.travel_speed" type="number" step="10" min="20"></span></label>
+        <label class="row"><span>Velocidad al escribir / al viajar (mm/s)</span><span class="pair"><input data-cfg="pen.draw_speed" type="number" step="5" min="1" max="80" aria-label="Velocidad al escribir"><input data-cfg="pen.travel_speed" type="number" step="10" min="1" max="200" aria-label="Velocidad al viajar"></span></label>
         <p class="hint">Siempre se pausa para colocar la pluma después del homing. El modo «pluma ajustada» conserva la referencia anterior de los ejes.</p>
         <label class="check"><input type="checkbox" data-cfg="pen.level_bed"> Nivelar la cama automáticamente al inicio (auto-calibración de la A1, ~1 min)</label>
         <p class="hint">Las alturas y el desplazamiento dependen de tu soporte. Y −35 mm es una estimación inicial. Ajusta la punta para que toque la hoja durante la pausa, sin forzar el resorte.</p>
@@ -378,6 +399,6 @@
 
 <div id="toast" class="toast" role="status" popover="manual"></div>
 <!-- type=module: las variables del programa no chocan con las que inyectan las extensiones del navegador -->
-<script type="module" src="app.js?v=20261003-design"></script>
+<script type="module" src="app.js?v=20261003-14"></script>
 </body>
 </html>

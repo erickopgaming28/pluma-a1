@@ -1,8 +1,8 @@
 """Dibujo local por MQTT con confirmación de ejecución, sin archivos de impresión.
 
-Un ACK sólo confirma aceptación. Hasta cuatro paquetes consecutivos forman
-una unidad de hasta 20 s nominales. En modo continuo el marcador intermedio
-acredita avance del intérprete, NO fin físico: no vacía la cola con M400.
+Un ACK sólo confirma aceptación. En modo continuo los grupos se alimentan sin
+esperar telemetría entre ellos. El presupuesto nominal regula la alimentación;
+el margen de aceleración/procesado sólo amplía los tiempos de confirmación.
 Pausas, cancelación, rutinas aisladas y fin requieren M400 y marcador fresco.
 Los valores 200..205 son marcadores comprobados por proyectos de la comunidad,
 no una garantía publicada por Bambu. El diagnóstico de la app debe probarlos.
@@ -297,6 +297,7 @@ class DirectJob:
             raise ValueError('El adelanto de envío debe estar entre 0 y 60 segundos.')
         self._clock = clock or time.monotonic
         self._buffer_until = 0.0
+        self._finish_until = 0.0
         self._continuous = False
         self._final_marker = 205
         self._condition = threading.Condition()
@@ -336,10 +337,12 @@ class DirectJob:
             if str(link.status.get('stg_cur')) == str(self._final_marker):
                 self._final_marker = 409 - self._final_marker
             self._buffer_until = self._clock()
+            self._finish_until = self._buffer_until
             self._pause_requested = self._stop_requested = False
             self._pause_message = ""
             self._data = {"state": "PREPARE", "percent": 0, "executed_percent": 0, "continuous": continuous,
-                          "job": str(title).replace("\n", " ").replace("\r", " ")[:120], "message": "Preparando comandos directos.", "layer": 0}
+                          "job": str(title).replace("\n", " ").replace("\r", " ")[:120], "message": "Preparando comandos directos.", "layer": 0,
+                          "packets_sent": 0, "ack_seconds": 0, "max_ack_seconds": 0}
             self._thread = threading.Thread(target=self._run, args=(events, total, link, link.key, z_up), daemon=True, name="pluma-a1-directo")
             self._thread.start()
             return dict(self._data, active=True)
@@ -390,10 +393,10 @@ class DirectJob:
 
     @staticmethod
     def _buffer_cost(block):
-        # Presupuesto de alimentación, no prueba de movimiento físico.
-        # Los segmentos cortos requieren margen para aceleración y procesado.
-        moves = sum(line.split()[0] in ('G0', 'G1') for line in block.lines)
-        return max(block.seconds * 1.5, block.seconds + moves * 0.025)
+        # El avance F da un mínimo nominal. Inflarlo con un margen de timeout
+        # alimentaba menos recorrido del que la A1 consumía, dejando la cola vacía.
+        # La duración real incluye aceleración; esto no mide la posición de la A1.
+        return block.seconds
 
     def _pace(self, block, link, key):
         """Alimenta una ventana corta sin insertar M400 entre grupos normales."""
@@ -413,15 +416,23 @@ class DirectJob:
     def _send_payload(self, payload, link, key, cost=0.0):
         self._health(link, key)
         sent_at = self._clock()
-        remaining = max(0.0, self._buffer_until - sent_at) if self._continuous else 0.0
+        remaining = max(0.0, self._finish_until - sent_at) if self._continuous else 0.0
+        moves = sum(line.split()[0] in ('G0', 'G1') for line in payload.splitlines() if line.strip())
+        timeout_cost = max(cost * 1.5, cost + moves * .025) if cost else 0.0
         # El firmware puede aplazar el ACK si su cola está ocupada. No reenviar.
-        ack = link.send_gcode(payload, wait=max(6.0, remaining + cost + 6.0) if self._continuous else 6.0)
+        ack = link.send_gcode(payload, wait=max(6.0, remaining + timeout_cost + 6.0) if self._continuous else 6.0)
         self._health(link, key)
         if not isinstance(ack, dict) or str(ack.get("result", "")).lower() != "success" or ack.get("err_code", 0) not in (0, "0", None):
             reason = ack.get("reason", "sin respuesta") if isinstance(ack, dict) else "sin respuesta"
             raise RuntimeError(f"La impresora no confirmó los comandos ({reason}). La ejecución quedó incierta; no se reintentó.")
         if self._continuous:
             self._buffer_until = max(self._buffer_until, sent_at) + cost
+            self._finish_until = max(self._finish_until, sent_at) + timeout_cost
+        ack_seconds = max(0.0, self._clock() - sent_at)
+        with self._condition:
+            self._data['packets_sent'] += 1
+            self._data['ack_seconds'] = round(ack_seconds, 3)
+            self._data['max_ack_seconds'] = round(max(self._data['max_ack_seconds'], ack_seconds), 3)
 
     def _send_block(self, block, link, key, marker, drain=True):
         version = link.stage_version
@@ -429,7 +440,7 @@ class DirectJob:
         payload = "\n".join((*block.lines, *barrier, f"M1002 gcode_claim_action : {marker}", ""))
         cost = self._buffer_cost(block) if self._continuous and not block.long else 0.0
         self._send_payload(payload, link, key, cost)
-        remaining = max(0.0, self._buffer_until - self._clock()) if self._continuous else 0.0
+        remaining = max(0.0, self._finish_until - self._clock()) if self._continuous else 0.0
         timeout = self.long_timeout if block.long else self.block_timeout + remaining
         deadline = self._clock() + timeout
         with self._condition:
@@ -446,6 +457,7 @@ class DirectJob:
             if link.stage_version > version and matching:
                 if drain:
                     self._buffer_until = self._clock()
+                    self._finish_until = self._buffer_until
                 return
             now = self._clock()
             if now >= deadline:
@@ -476,7 +488,7 @@ class DirectJob:
                 if accepted:
                     self._send_block(_Block(()), link, key, marker)
                 return tuple(accepted), bool(accepted)
-            if index == len(blocks) - 1:
+            if index == len(blocks) - 1 and drain:
                 self._send_block(block, link, key, marker, drain=drain)
             else:
                 self._send_payload("\n".join((*block.lines, "")), link, key,

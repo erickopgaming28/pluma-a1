@@ -22,7 +22,7 @@ from plotter import fonts, gcode, handwriting, pathops, printer, sketch, stream,
 ROOT = Path(__file__).resolve().parent
 CONFIG_FILE = ROOT / "config.json"
 PORT = 8765
-APP_VERSION = '2026.10.03.13'
+APP_VERSION = '2026.10.03.14'
 WORKSPACE_ID = str(uuid.uuid5(uuid.NAMESPACE_URL, str(ROOT).casefold()))
 
 DEFAULT_CONFIG = {
@@ -182,7 +182,7 @@ def api_state():
     for fid, label in fonts.CATALOG:
         font_list.append({"id": fid, "label": label, "sample": font_sample(fonts.get_font(fid))})
     return jsonify({"config": public_config(), "fonts": font_list, "geometry": geometry(),
-                    'app_version': APP_VERSION, 'features': {'async_images': True},
+                    'app_version': APP_VERSION, 'features': {'async_images': True, 'motion_settings': True},
                     "paper_sizes": gcode.PAPER_SIZES, "lan_url": lan_url()})
 
 
@@ -214,6 +214,29 @@ def api_config():
     config.clear()
     config.update(candidate)
     return jsonify({"config": public_config(), "geometry": geometry()})
+
+
+@app.post('/api/motion-settings')
+def api_motion_settings():
+    """Guarda velocidades del próximo programa, sin tocar la calibración ni mover."""
+    data = request.get_json(force=True)
+    allowed = {'draw_speed', 'travel_speed', 'z_speed', 'accel'}
+    if not isinstance(data, dict) or not data or set(data) - allowed:
+        raise ValueError('Sólo se permiten velocidades de dibujo, viaje, elevación y aceleración.')
+    if not dispatch_lock.acquire(blocking=False):
+        raise ValueError('Espera a que termine la preparación del envío para guardar la velocidad.')
+    try:
+        candidate = copy.deepcopy(config)
+        candidate['pen'].update(data)
+        gcode.validate_config(candidate)
+        temporary = CONFIG_FILE.with_suffix('.tmp')
+        temporary.write_text(json.dumps(candidate, indent=2, ensure_ascii=False), encoding='utf-8')
+        temporary.replace(CONFIG_FILE)
+        config['pen'].update(data)
+        return jsonify(pen=config['pen'], next_job_only=True,
+                       message='Velocidades guardadas para el próximo dibujo. El trabajo en curso conserva su velocidad.')
+    finally:
+        dispatch_lock.release()
 
 
 def _area():

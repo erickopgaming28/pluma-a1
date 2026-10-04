@@ -30,6 +30,8 @@ try {
     const errors = [], compositions = [], conversions = [];
     page.on('pageerror', e => errors.push(e.message));
     let rendered = new Map(), tasks = new Map(), slowNext = false, taskNumber = 0;
+    let motionPen = structuredClone(fixture.state.config.pen), savedSpeeds = 0;
+    let motionSettingsSupported = true;
     const canceled = [];
     function convert(body) {
       conversions.push(body);
@@ -48,7 +50,11 @@ try {
       const url = new URL(route.request().url());
       const endpoint = url.pathname;
       let data;
-      if (endpoint === '/api/state') data = { ...fixture.state, app_version: '2026.10.03.13', features: { async_images: true } };
+      if (endpoint === '/api/state') data = { ...fixture.state, config: { ...fixture.state.config, pen: motionPen }, app_version: '2026.10.03.14', features: { async_images: true, motion_settings: motionSettingsSupported } };
+      else if (endpoint === '/api/motion-settings') {
+        Object.assign(motionPen, route.request().postDataJSON()); savedSpeeds++;
+        data = { pen: motionPen, next_job_only: true };
+      }
       else if (endpoint === '/api/contact-test') {
         data = { ...structuredClone(fixture.job), contact_test: true };
         data.pages[0].layers[0].paths = [[20, 20, 26, 20], [23, 17, 23, 23]];
@@ -99,6 +105,20 @@ try {
     ] })); });
     await page.goto('http://pluma-offline.test/');
     await page.waitForFunction(() => !document.querySelector('#send').disabled);
+    await page.locator('#openMotion').click();
+    await page.locator('[data-motion-profile="fast"]').click();
+    assert.equal(await page.locator('[data-motion="draw_speed"]').inputValue(), '60');
+    await page.screenshot({ path: path.join(root, 'tests/artifacts/velocidad-' + name + '.png') });
+    await page.locator('#saveMotion').click();
+    await page.waitForFunction(() => !document.querySelector('#motionDlg').open);
+    assert.equal(savedSpeeds, 1);
+    assert.ok((await page.locator('#openMotion').textContent()).includes('60 mm/s'));
+    await page.locator('#openMotion').click();
+    await page.locator('[data-motion="draw_speed"]').fill('81');
+    await page.locator('#saveMotion').click();
+    assert.equal(savedSpeeds, 1);
+    assert.ok(await page.locator('#motionDlg').isVisible());
+    await page.locator('#motionDlg button[value="cancel"]').click();
     assert.equal(await page.locator('#elementCount').textContent(), '2');
     assert.equal(await page.locator('#paperInfo').textContent(), fixture.state.geometry.paper.join(' × ') + ' mm');
     assert.ok(!await page.locator('#rotationAngle').isVisible());
@@ -231,7 +251,7 @@ try {
     assert.ok(canceled.includes(obsolete));
     assert.equal(conversions.at(-1).opts.mode, 'trazo');
     assert.ok(!compositions.at(-1).items.some(it => it.render_id === tasks.get(obsolete).result.render_id));
-    assert.equal(await page.locator('#appVersion').textContent(), 'Versión 2026.10.03.13');
+    assert.equal(await page.locator('#appVersion').textContent(), 'Versión 2026.10.03.14');
     await page.locator('[data-photo-mode]').click();
     await page.waitForFunction(() => !document.querySelector('#send').disabled && document.querySelector('#busy').hidden);
     assert.equal(conversions.at(-1).opts.mode, 'fotolinea');
@@ -249,6 +269,11 @@ try {
     assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('pluma-a1')).elements), designBefore);
     assert.deepEqual(errors, []);
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+    motionSettingsSupported = false;
+    await page.reload();
+    await page.waitForFunction(() => !document.querySelector('#send').disabled);
+    assert.ok(await page.locator('#openMotion').isDisabled());
+    assert.ok(await page.locator('#updateNotice').isVisible());
     console.log(name + ': rotación, medidas, recorte, estilos, guardado y conversión con progreso/cancelación verificados; sin impresora.');
     await context.close();
   }

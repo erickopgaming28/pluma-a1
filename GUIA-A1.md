@@ -1,5 +1,17 @@
 # Pluma A1 · puesta en marcha
 
+## Actualización: alimentación continua y velocidad (3 de octubre de 2026)
+
+La versión **2026.10.03.14** elimina la espera de telemetría entre grupos normales. Los reportes pueden llegar después de que se consume el recorrido enviado; esperar cada uno puede dejar la punta detenida. El envío sigue esperando el ACK de cada paquete y nunca repite movimientos inciertos. Preparación, pausa, cancelación y final conservan sus barreras. Esta separación coincide con las [mediciones de Bambu Cuts sobre una A1](https://github.com/unrelatedlabs/bambu-cuts#G-code-progress-over-MQTT), sin copiar su código.
+
+Se separa la duración nominal de alimentación del margen para confirmar movimientos. Antes se sumaban un factor de 1.5 y al menos 25 ms por movimiento al presupuesto de alimentación: en trazos cortos podía enviar menos recorrido del que consumía la A1. Ahora esos márgenes sólo amplían los tiempos de confirmación. La ventana nominal no mide la cola física y la fluidez debe comprobarse en esta máquina; el estado registra paquetes y latencias de ACK para ayudar a distinguir problemas de red.
+
+El botón **Velocidad** ofrece Suave, Normal y Rápido y valores manuales de dibujo, viaje, elevación y aceleración. Guardar cambia el próximo programa sin mover la A1, modificar el actual ni invalidar las alturas de calibración. Para lápiz o un soporte flexible empieza con el perfil Suave y comprueba apoyo y detalle antes de aumentar.
+
+Si hay un dibujo en curso durante la actualización, espera a que termine, cierra su terminal, abre **Iniciar Pluma A1.bat** y recarga la página. Debe mostrar **2026.10.03.14**. Las pausas breves para levantar la punta entre trazos separados siguen siendo necesarias.
+
+Verificación: 88 pruebas sin impresora, incluida telemetría intermedia silenciosa, alimentación nominal, conservación de calibración, rechazos de velocidad inválida, pausa/cancelación y transmisión íntegra de una imagen grande. QA del diálogo de velocidad, guardado y límites en escritorio y móvil. Falta comprobar la fluidez física de esta versión.
+
 ## Actualización: apoyo de la punta y fotografías (3 de octubre de 2026)
 
 La versión **2026.10.03.13** responde a un dibujo real que dejó zonas muy tenues: el usuario observó que la parte trasera no escribía como la frontal. Ese síntoma es compatible con pérdida de contacto, pero la foto no permite certificar su causa. El programa anterior no activaba explícitamente la compensación al reutilizar «pluma ya ajustada»; ahora envía `G29.2 S1` en ese modo si la nivelación está habilitada. También se activa **después** de `G29` y su barrera, siguiendo el uso del [perfil oficial de la A1](https://github.com/bambulab/BambuStudio/blob/master/resources/profiles/BBL/machine/Bambu%20Lab%20A1%200.4%20nozzle%20template%20machine_start_gcode.json). Ajustar pluma sondea toda la cama; un dibujo que sondea su propia zona incluye las posiciones de boquilla y punta.

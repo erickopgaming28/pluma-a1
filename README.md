@@ -22,7 +22,7 @@ Pluma A1 convierte texto e imágenes en recorridos de pluma para una Bambu Lab A
 
 El editor separa la creación del diseño, la preparación de la A1 y el envío. Puedes plegar **Posición, tamaño y rotación** para concentrarte en el texto o la imagen. La vista previa muestra las dimensiones de tu hoja y la interfaz se adapta a computadora, celular y al tema claro u oscuro del sistema.
 
-> **Estado:** proyecto experimental. Hay 84 pruebas del motor y revisión del editor en escritorio y móvil. Incluyen una imagen de 4000 × 4000 píxeles convertida, rotada, exportada y transmitida íntegramente a un receptor de prueba. El usuario observó dibujos con tinta desigual entre zonas; la uniformidad de contacto, fluidez y precisión todavía requieren comprobación física. Las capturas usan diseños de prueba, sin conexión a una impresora.
+> **Estado:** proyecto experimental. Hay 88 pruebas del motor y revisión del editor en escritorio y móvil. Incluyen una imagen de 4000 × 4000 píxeles convertida, rotada, exportada y transmitida íntegramente a un receptor de prueba. El usuario observó dibujos con tinta desigual entre zonas y pausas durante la escritura; la uniformidad de contacto, fluidez y precisión todavía requieren comprobación física. Las capturas usan diseños de prueba, sin conexión a una impresora.
 
 ## Crear tu diseño
 
@@ -76,11 +76,17 @@ El servidor también escucha en la red local: desde un celular puedes abrir la d
 
 La ruta inicial envía **comandos G-code directos por MQTT**. Alimenta la cola de movimientos sin insertar una espera de finalización entre cada grupo normal. Conserva confirmaciones físicas para pausar, cambiar de pluma, cancelar y terminar. La fluidez observada depende de la red y del firmware.
 
-Las imágenes grandes se preparan en un trabajador con mensajes de avance. Cambiar un ajuste descarta la conversión anterior. La ordenación usa un índice espacial a partir de 4096 trazos y la vista previa reutiliza los recorridos al moverlos o girarlos. El envío mantiene una ventana estimada de 12 segundos, con reserva para seguir alimentando la cola; un paquete individual largo puede superar esa ventana. Los tiempos de espera incluyen el recorrido pendiente estimado. La estimación regula el envío; el fin sigue exigiendo una confirmación física nueva.
+Las imágenes grandes se preparan en un trabajador con mensajes de avance. Cambiar un ajuste descarta la conversión anterior. La ordenación usa un índice espacial a partir de 4096 trazos y la vista previa reutiliza los recorridos al moverlos o girarlos. El envío mantiene una ventana nominal de 12 segundos, con reserva para seguir alimentando la cola; un paquete individual largo puede superar esa ventana. Los grupos normales se envían tras sus ACK, sin esperar telemetría intermedia. El margen de aceleración y procesamiento amplía los tiempos de confirmación, separado del ritmo de alimentación. La ventana no mide la posición ni limita con certeza la cola física; la A1 puede aplazar o rechazar comandos, y el fin sigue exigiendo una confirmación nueva.
 
 La exportación G-code/3MF se conserva como alternativa; que un archivo se suba o una orden sea aceptada no confirma que el firmware lo haya ejecutado. No se envía un modelo STL para dibujar ni se requiere extrusión.
 
-El aviso final confirma que se recibió la señal situada detrás de la barrera del recorrido; **no certifica tinta ni contacto de la punta**. Los marcadores finales 204/205 se separan de los checkpoints 200/201 para que una señal intermedia retrasada no cierre el trabajo. La compensación de cama se activa después del sondeo y también al reutilizar la nivelación con «pluma ya ajustada». **Ajustar pluma** sondea toda la cama; la medición normal incluye el área de la boquilla y la punta desplazada.
+El aviso final confirma que se recibió la señal situada detrás de la barrera del recorrido; **no certifica tinta ni contacto de la punta**. Los marcadores finales 204/205 se separan de los marcadores 200/201 de preparación y pausas para que una señal retrasada no cierre el trabajo. La compensación de cama se activa después del sondeo y también al reutilizar la nivelación con «pluma ya ajustada». **Ajustar pluma** sondea toda la cama; la medición normal incluye el área de la boquilla y la punta desplazada.
+
+### Ajustar la velocidad
+
+Pulsa **Velocidad** junto a las dimensiones de la hoja. Puedes elegir **Suave** (20 mm/s), **Normal** (40 mm/s) o **Rápido** (60 mm/s), o escribir las velocidades de dibujo y viaje. En **Elevación y aceleración** ajustas esos movimientos sin cambiar las alturas de apoyo. Los límites actuales son 80 mm/s de dibujo, 200 mm/s de viaje, 30 mm/s de elevación y 3000 mm/s² de aceleración. Los perfiles son puntos de partida, sin certificación para cada soporte o instrumento.
+
+Los cambios se guardan para el **próximo dibujo**, conservando la calibración. No modifican un trabajo ya enviado ni ordenan movimientos. Si actualizas mientras está dibujando, espera a que termine antes de reiniciar la terminal y recargar la página. Elevar la velocidad no elimina las levantadas necesarias entre trazos separados ni garantiza contacto o calidad.
 
 ## Antes de la primera marca
 

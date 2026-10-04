@@ -157,7 +157,8 @@ class LargeStreamTests(unittest.TestCase):
         self.assertEqual(job.snapshot()['state'], 'FINISH')
         # Posicionamiento aislado y fin; ningún M400 en el recorrido normal.
         self.assertEqual(sum('M400' in p.splitlines() for p in link.sent), 2)
-        self.assertGreater(link.times[-1], 3)
+        # Short segments must not incur an invented 25 ms delay apiece.
+        self.assertLess(link.times[-1] - link.times[1], 3)
         self.assertGreater(max(link.waits), 6)
 
     def test_pause_during_pacing_does_not_publish_another_body(self):
