@@ -1,5 +1,6 @@
 import { normalizeAngle, worldPoint, localPoint, rotatedBounds } from './element-geometry.mjs';
 import { createCropEditor } from './crop-editor.mjs';
+import { DesignHistory, designKey, validateDesignFile, fitPlacement } from './design-tools.mjs';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -32,7 +33,7 @@ const DEFAULTS = {
 const SAMPLE = 'Querida Sofía:\n\nTe escribo esta carta sin tocar la pluma: la sostiene mi impresora 3D. ¿Verdad que parece letra de verdad?\n\nUn abrazo,\nErick';
 
 // Lo que se guarda: los elementos colocados en la hoja (x, y, w en mm desde la esquina superior izquierda).
-const S = { elements: null, sel: null, nextId: 1 };
+const S = { name: 'Mi diseño', elements: null, sel: null, nextId: 1 };
 // Estado de la sesión: conversiones, vista, trabajo compuesto, impresora.
 const R = { cfg: null, geo: null, rend: {}, seq: {}, thumbs: {}, view: null, job: null, over: null, dirty: false,
             anim: null, sent: null, status: {}, penReady: false, fileTarget: 'sel', tasks: {}, asyncImages: false,
@@ -44,7 +45,113 @@ try {
   if (saved && Array.isArray(saved.elements)) Object.assign(S, saved);
   else legacy = saved;  // versión anterior: un solo texto que ocupaba toda la hoja
 } catch {}
-const persist = () => { try { localStorage.setItem('pluma-a1', JSON.stringify(S)); } catch {} };
+const history = new DesignHistory();
+let historyReady = false, historyTimer, fileBusy = false;
+const persist = () => {
+  try { localStorage.setItem('pluma-a1', JSON.stringify(S)); }
+  catch { $('#saveHint').textContent = 'No se pudo guardar en este navegador. Descarga tu diseño con «Guardar diseño».'; }
+  if (historyReady) {
+    clearTimeout(historyTimer);
+    historyTimer = setTimeout(() => { history.record(S); paintHistory(); }, 400);
+    paintHistory();
+  }
+};
+
+function paintHistory() {
+  if (!historyReady) return;
+  const changed = designKey(S) !== designKey(history.current);
+  $('#undoDesign').disabled = fileBusy || !(history.canUndo || changed);
+  $('#redoDesign').disabled = fileBusy || changed || !history.canRedo;
+}
+function flushHistory() { clearTimeout(historyTimer); history.record(S); paintHistory(); }
+function restoreDesign(state) {
+  stopAnim(); clearTimeout(rotationTimer); ++composeSeq;
+  for (const el of S.elements) {
+    ++R.seq[el.id]; clearTimeout(timers[el.id]); delete resizeCenters[el.id];
+    if (R.tasks[el.id]) api(`/api/element/tasks/${R.tasks[el.id]}/cancel`, {}).catch(() => {});
+  }
+  Object.assign(S, state);
+  S.nextId = Math.max(S.nextId, ...S.elements.map(e => e.id + 1), 1);
+  S.elements.forEach(el => {
+    el.opts = { ...DEFAULTS[el.type], ...el.opts };
+    if (el.type === 'image' && !el.original) el.original = {x:el.x,y:el.y,w:el.w,rotation:el.rotation || 0,colorMode:el.colorMode,pen:el.pen};
+  });
+  R.rend = {}; R.thumbs = {}; R.over = null; R.dirty = true; R.job = null;
+  $('#contactTest').textContent = 'Probar apoyo'; $('#designName').value = S.name;
+  syncPanel(); persist(); draw(); paintStats();
+  S.elements.forEach(el => touch(el, true));
+  if (!S.elements.length) compose();
+}
+function travelHistory(direction) {
+  if (fileBusy) return;
+  flushHistory();
+  const state = direction === 'undo' ? history.undo() : history.redo();
+  if (!state) return;
+  historyReady = false; restoreDesign(state); historyReady = true; paintHistory();
+  toast(direction === 'undo' ? 'Cambio deshecho.' : 'Cambio rehecho.');
+}
+
+const blobDataUrl = blob => new Promise((resolve,reject) => {
+  const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(blob);
+});
+function paintFileBusy(value) {
+  fileBusy = value;
+  $('#saveDesign').disabled = $('#openDesign').disabled = value; paintHistory();
+  $('#newDesign').disabled = value;
+}
+async function saveDesignFile() {
+  if (fileBusy) return;
+  paintFileBusy(true);
+  try {
+    const snapshot = JSON.parse(JSON.stringify(S));
+    const images = {};
+    for (const el of snapshot.elements.filter(e => e.type === 'image')) {
+      if (images[el.imageId]) continue;
+      const response = await fetch('/api/image/' + encodeURIComponent(el.imageId) + '/preview');
+      if (!response.ok) throw new Error('Vuelve a cargar la imagen que falta antes de guardar el diseño.');
+      images[el.imageId] = await blobDataUrl(await response.blob());
+    }
+    const data = {format:'pluma-a1.design',version:1,...snapshot,images,pens:R.cfg.pens.map(p=>({name:p.name,color:p.color})),paper:R.geo.paper};
+    validateDesignFile(data);
+    const blob = new Blob([JSON.stringify(data)],{type:'application/json'});
+    if (blob.size > 64*1024*1024) throw new Error('El diseño supera 64 MB. Guarda menos imágenes en este archivo.');
+    const url = URL.createObjectURL(blob), link = document.createElement('a');
+    link.href = url; link.download = (S.name || 'Mi diseño').replace(/[^a-zA-Z0-9áéíóúñ _-]/gi,'').slice(0,80) + '.pluma.json';
+    link.click(); setTimeout(()=>URL.revokeObjectURL(url),1000);
+    toast('Diseño descargado con sus imágenes. No incluye datos de la impresora.');
+  } catch (error) { toast(error.message || 'No se pudo guardar. Inténtalo de nuevo.',true); }
+  finally { paintFileBusy(false); }
+}
+async function openDesignFile(file) {
+  if (!file || fileBusy) return;
+  paintFileBusy(true);
+  try {
+    if (file.size > 64*1024*1024) throw new Error('Elige un diseño de hasta 64 MB.');
+    let data;
+    try { data = JSON.parse(await file.text()); } catch { throw new Error('No se pudo leer el diseño. Elige un archivo .pluma.json.'); }
+    const next = validateDesignFile(data), ids = new Map();
+    for (const el of next.elements.filter(e=>e.type==='image')) {
+      if (ids.has(el.imageId)) continue;
+      const blob = await (await fetch(data.images[el.imageId])).blob();
+      const form = new FormData(); form.append('file',new File([blob],'imagen.png',{type:blob.type}));
+      ids.set(el.imageId,(await api('/api/image/upload',form,true)).id);
+    }
+    let changedColors = false;
+    for (const el of next.elements) {
+      if (el.type === 'image') el.imageId = ids.get(el.imageId);
+      const color = data.pens?.[el.pen]?.color;
+      const match = R.cfg.pens.findIndex(p=>p.color.toLowerCase() === String(color).toLowerCase());
+      if (match >= 0) el.pen = match;
+      else if (color || el.pen >= R.cfg.pens.length) { el.pen=0; changedColors=true; }
+      if (el.colorMode === 'multi' && JSON.stringify(data.pens?.map(p=>p.color)) !== JSON.stringify(R.cfg.pens.map(p=>p.color))) changedColors=true;
+    }
+    flushHistory(); historyReady = false; restoreDesign(next); historyReady = true; history.record(S); paintHistory();
+    toast(changedColors ? 'Diseño abierto. Revisa los colores: tus plumas actuales son diferentes.' : 'Diseño abierto. Puedes deshacer para volver al anterior.');
+    if (Array.isArray(data.paper) && data.paper.some((v,i)=>Math.abs(v-R.geo.paper[i])>.1))
+      toast('El diseño usaba otra hoja. Se conserva tu hoja actual; revisa que todos los trazos quepan.');
+  } catch (error) { toast(error.message || 'No se pudo abrir el diseño. Tu dibujo sigue aquí.',true); }
+  finally { paintFileBusy(false); $('#projectFile').value = ''; }
+}
 
 async function api(path, body, raw) {
   const opt = body === undefined ? {} : raw ? { method: 'POST', body } : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
@@ -199,12 +306,15 @@ function paintStats() {
   const page = R.job && R.job.pages[0];
   const has = !!(page && page.layers.length);
   const st = has && page.stats;
+  const dots = has ? strokes().reduce((n,l)=>n+l.paths.filter(p=>p.length===4 && p[0]===p[2] && p[1]===p[3]).length,0) : 0;
+  $('#emptyDesign').hidden = !!S.elements.length;
   $('#stats').innerHTML = !has ? (S.elements.length ? R.dirty ? 'Convirtiendo…' : 'No hay trazos. Prueba otro estilo o ajusta la oscuridad, el brillo y el contraste.' : 'Añade un texto o una imagen para empezar.')
-    : `<b>${(st.draw_mm / 1000).toFixed(1)} m</b> de trazo · <b>${st.lifts.toLocaleString('es')}</b> levantadas · unos <b>${fmtTime(st.seconds)}</b>`
+    : (st.draw_mm === 0 && dots ? `<b>${dots.toLocaleString('es')}</b> puntos` : `<b>${(st.draw_mm / 1000).toFixed(1)} m</b> de trazo`)
+      + ` · <b>${st.lifts.toLocaleString('es')}</b> levantadas · unos <b>${fmtTime(st.seconds)}</b>`
       + (page.layers.length > 1 ? ` · <b>${page.layers.length}</b> plumas` : '')
       + (R.over ? ' · marca de calibración' : '')
       + (R.job.outside ? ' · <b class="warn">Hay algo fuera de la zona que alcanza la pluma</b>' : '');
-  $('#send').disabled = !has || R.dirty || R.job.outside;
+  $('#send').disabled = !has || R.dirty || R.job.outside || !!R.placing;
   $('#simulate').disabled = !has;
 }
 
@@ -219,18 +329,40 @@ function setOpt(group, key, v) {
 }
 
 function buildSliders(group) {
+  const hints = {
+    detail:'Más detalle conserva trazos pequeños; también puede aumentar el ruido.',
+    threshold:'Un valor mayor incluye más zonas oscuras de la imagen.',
+    photo_cleaning:'Suaviza textura y ruido antes de generar el recorrido.',
+    shade:'Añade más marcas en las zonas oscuras para representar sus tonos.',
+    hatch_spacing:'Menor separación da sombras más densas y más recorridos.',
+    dot_spacing:'Menor separación añade puntos y tarda más en dibujarse.',
+    hatch_angle:'Cambia la dirección de las líneas que forman las sombras.',
+    brightness:'Aclara u oscurece la imagen antes de convertirla.',
+    contrast:'Separa los tonos claros y oscuros para destacar las formas.',
+    human:'Añade pequeñas variaciones a la letra; cero produce trazos más regulares.'
+  };
   $(`#${group}Sliders`).innerHTML = SLIDERS[group].map(c => `
     <label class="field"><span class="lbl">${c.label}<output></output></span>
-    <input type="range" min="${c.min}" max="${c.max}" step="${c.step}" data-k="${c.k}" data-unit="${c.unit}"></label>`).join('');
-  for (const inp of $$(`#${group}Sliders input`)) {
+    <div class="range-row"><input type="range" min="${c.min}" max="${c.max}" step="${c.step}" data-k="${c.k}" data-unit="${c.unit}" aria-label="${c.label}">
+    <input type="number" min="${c.min}" max="${c.max}" step="${c.step}" data-number="${c.k}" aria-label="Valor de ${c.label}"></div>
+    ${hints[c.k] ? `<small class="control-hint">${hints[c.k]}</small>` : ''}</label>`).join('');
+  for (const inp of $$(`#${group}Sliders input[type="range"]`)) {
+    const number = inp.closest('label').querySelector('[data-number]');
     const show = () => {
       const extra = group === 'image' && inp.dataset.unit === ' %' && Math.abs(+inp.value) > 100;
       inp.closest('label').classList.toggle('extended', extra);
-      inp.previousElementSibling.lastElementChild.textContent = inp.value + inp.dataset.unit + (extra ? ' · extra' : '');
+      inp.closest('label').querySelector('output').textContent = inp.value + inp.dataset.unit + (extra ? ' · extra' : '');
+      number.value = inp.value;
       inp.setAttribute('aria-valuetext', inp.value + inp.dataset.unit + (extra ? ', supera el 100 por ciento' : ''));
       paintExtendedHint();
     };
     inp.addEventListener('input', () => { show(); setOpt(group, inp.dataset.k, +inp.value); });
+    number.addEventListener('change', () => {
+      if (!number.checkValidity() || !Number.isFinite(number.valueAsNumber)) {
+        toast(`Escribe un valor entre ${number.min} y ${number.max}.`,true); show(); return;
+      }
+      inp.value = number.value; show(); setOpt(group, inp.dataset.k, +inp.value);
+    });
     syncers.push(el => { if (el.type === group) { inp.value = el.opts[inp.dataset.k] ?? DEFAULTS[group][inp.dataset.k]; show(); } });
   }
 }
@@ -241,7 +373,9 @@ function paintExtendedHint() {
 function bindOptions() {
   for (const seg of $$('.seg[data-opt]')) {
     const [group, key] = seg.dataset.opt.split('.');
-    const paint = el => $$('button', seg).forEach(b => b.classList.toggle('on', b.dataset.v === el.opts[key]));
+    const paint = el => $$('button', seg).forEach(b => {
+      const on = b.dataset.v === el.opts[key]; b.classList.toggle('on',on); b.setAttribute('aria-pressed',on);
+    });
     seg.addEventListener('click', e => { const b = e.target.closest('button'); if (b) { setOpt(group, key, b.dataset.v); paint(sel()); } });
     syncers.push(el => { if (el.type === group) paint(el); });
   }
@@ -289,6 +423,7 @@ function syncPanel() {
   $('#tab-colors').hidden = !el;
   $('#noSel').hidden = !!el;
   $('#rotationControls').hidden = !el;
+  $('#designName').value = S.name || 'Mi diseño';
   if (!el) return;
   $('#rotationAngle').value = $('#rotationSlider').value = angleOf(el);
   syncGeometry();
@@ -314,14 +449,15 @@ function paintImageOptions(el) {
     retrato: 'Conserva rasgos y sombras para dar volumen al rostro. El botón prepara brillo y contraste neutros y usa tu pluma más oscura. Menor separación da más detalle y tarda más. La A1 mantiene una altura de apoyo fija: los grises se aproximan con la densidad de los trazos.',
     puntillismo: 'Representa luces y sombras con puntos separados, sin unirlos con líneas. Menor separación conserva más detalle y aumenta el tiempo: la punta sube y baja en cada punto. La vista supone una punta de 0.3 mm; el tamaño real depende de tu instrumento.'
   }[mode] || '';
-  for (const input of $$('#imageSliders input')) {
+  for (const input of $$('#imageSliders input[type="range"]')) {
     const key = input.dataset.k;
     input.closest('label').hidden = key === 'threshold' ? mode !== 'trazo' : key === 'photo_cleaning' ? !['fotolinea', 'retrato', 'puntillismo'].includes(mode)
       : key === 'dot_spacing' ? mode !== 'puntillismo' : key === 'shade' ? !(hatch || mode === 'puntillismo')
       : ['hatch_spacing', 'hatch_angle'].includes(key) ? !hatch : key === 'detail' && ['rayado', 'puntillismo'].includes(mode);
-    if (key === 'shade') input.previousElementSibling.firstChild.textContent = mode === 'puntillismo' ? 'Densidad de los puntos' : 'Cantidad de sombreado';
-    if (key === 'detail') input.previousElementSibling.firstChild.textContent = mode === 'trazo' ? 'Detalle de la línea' : 'Detalle de los contornos';
-    if (key === 'hatch_spacing') input.previousElementSibling.firstChild.textContent = mode === 'retrato' ? 'Separación de los trazos' : 'Separación del rayado';
+    const heading = input.closest('label').querySelector('.lbl');
+    if (key === 'shade') heading.firstChild.textContent = mode === 'puntillismo' ? 'Densidad de los puntos' : 'Cantidad de sombreado';
+    if (key === 'detail') heading.firstChild.textContent = mode === 'trazo' ? 'Detalle de la línea' : 'Detalle de los contornos';
+    if (key === 'hatch_spacing') heading.firstChild.textContent = mode === 'retrato' ? 'Separación de los trazos' : 'Separación del rayado';
   }
   $('input[data-opt="image.cross"]').closest('label').hidden = !hatch || (mode === 'retrato' && el.opts.portrait_style !== 'rayado');
   $('#portraitStyles').hidden = mode !== 'retrato';
@@ -340,6 +476,29 @@ function syncGeometry() {
   const b = box(el);
   for (const k of ['x', 'y', 'w', 'h']) $('#element' + k.toUpperCase()).value = +b[k].toFixed(2);
   $('#elementH').disabled = el.type !== 'image' || !R.rend[el.id] || R.rend[el.id].missing || R.rend[el.id].pending;
+  const pending = !R.rend[el.id] || R.rend[el.id].missing || R.rend[el.id].pending || R.placing;
+  $('#centerElement').disabled = $('#fitElement').disabled = !!pending;
+}
+
+async function placeSelected(shrink) {
+  const el = sel(); if (!el || R.placing || !R.rend[el.id] || R.rend[el.id].pending || R.rend[el.id].missing) return;
+  flushHistory(); R.placing = true; R.dirty=true; paintStats(); syncGeometry(); stopAnim(); R.over = null;
+  try {
+    if (shrink) for (let attempt=0; attempt<3; attempt++) {
+      const target = fitPlacement(box(el), angleOf(el), R.geo.drawable);
+      if (target.scale >= .999) break;
+      el.w = clamp(target.w,15,400);
+      if (el.type === 'text') el.opts.size = Math.max(4,el.opts.size * target.scale);
+      clearTimeout(timers[el.id]); await renderEl(el);
+      if (!S.elements.includes(el)) return;
+    }
+    const target = fitPlacement(box(el), angleOf(el), R.geo.drawable,false);
+    el.x=target.x;el.y=target.y;R.dirty=true;++composeSeq;persist();flushHistory();syncPanel();draw();await compose();
+    const b=rotatedBounds(box(el),angleOf(el)),[x0,y0,x1,y1]=R.geo.drawable;
+    toast(shrink && (b.w>x1-x0+.1 || b.h>y1-y0+.1)
+      ? 'Este elemento sigue siendo grande. Reduce el texto o usa una hoja con más espacio.'
+      : shrink ? 'Elemento centrado dentro del área de trabajo.' : 'Elemento centrado.');
+  } finally { R.placing=false;syncGeometry();paintStats(); }
 }
 function setGeometry(key, value) {
   const el = sel(); if (!el) return;
@@ -585,6 +744,7 @@ let drag = null;
 function bindCanvas() {
   cv.addEventListener('pointerdown', e => {
     if (!R.view) return;
+    cv.focus({preventScroll:true});
     if (R.marginSaving) return;
     if (R.canvasTool === 'pan' || e.button === 1) {
       drag = { mode: 'pan', clientX: e.clientX, clientY: e.clientY, x: R.viewport.x, y: R.viewport.y };
@@ -717,6 +877,7 @@ async function loadImage(file, target) {
 /** Trabajo ya armado por el programa (la marca de calibración): se muestra en lugar de los elementos. */
 function showJob(job) {
   stopAnim();
+  if (!R.over) R.previewSelection=S.sel;
   R.over = job; R.job = job; R.geo = job.geometry; R.dirty = false;
   select(null);
   paintStats();
@@ -1050,10 +1211,18 @@ async function init() {
   $('#openMotion').hidden = false;
   $('#openMotion').disabled = !st.features?.motion_settings;
   $('#updateNotice').hidden = !!st.features?.motion_settings && !!st.features?.extended_images && R.paperLayout && !!st.features?.portrait && !!st.features?.stippling;
-  $('#updateNotice').textContent = 'Actualización preparada: cuando termine el dibujo, cierra la terminal de Pluma A1 y vuelve a abrir Iniciar Pluma A1.bat. Después recarga esta página para activar Puntillismo y las herramientas nuevas.';
+  $('#updateNotice').textContent = 'Actualización preparada: cuando termine el dibujo, cierra la terminal de Pluma A1 y vuelve a abrir Iniciar Pluma A1.bat. Después recarga esta página para activar las herramientas nuevas.';
   paintMotion();
   $('#appVersion').textContent = st.app_version ? `Versión ${st.app_version}` : 'Versión anterior: reinicia la terminal para cargar las mejoras';
   $('#lanUrl').textContent = st.lan_url || 'no disponible (sin red local)';
+  let theme='system';try {theme=localStorage.getItem('pluma-a1-theme') || 'system';} catch {}
+  if (!['system','light','dark'].includes(theme)) theme='system';
+  $('#themeChoice').value=theme;
+  document.documentElement.style.colorScheme=theme==='system' ? 'light dark' : theme;
+  $('#themeChoice').addEventListener('change',event=>{
+    const value=event.target.value;document.documentElement.style.colorScheme=value==='system' ? 'light dark' : value;
+    try {localStorage.setItem('pluma-a1-theme',value);} catch {}
+  });
 
   if (!S.elements) {
     S.elements = [];
@@ -1065,6 +1234,40 @@ async function init() {
     if (el.type === 'image' && !el.original) el.original = { x: el.x, y: el.y, w: el.w, rotation: 0, colorMode: el.colorMode, pen: el.pen };
   });
   buildFonts(st.fonts);
+  history.reset(S); historyReady=true;paintHistory();
+  $('#undoDesign').addEventListener('click',()=>travelHistory('undo'));
+  $('#redoDesign').addEventListener('click',()=>travelHistory('redo'));
+  $('#designName').value=S.name || 'Mi diseño';
+  $('#designName').addEventListener('input',event=>{S.name=event.target.value.slice(0,80);persist();});
+  $('#saveDesign').addEventListener('click',saveDesignFile);
+  $('#openDesign').addEventListener('click',()=>$('#projectFile').click());
+  $('#projectFile').addEventListener('change',event=>openDesignFile(event.target.files[0]));
+  $('#newDesign').addEventListener('click',()=>{
+    if (fileBusy) return;flushHistory();restoreDesign({name:'Mi diseño',elements:[],sel:null,nextId:S.nextId});
+    flushHistory();toast('Hoja vacía lista. Puedes deshacer para recuperar tu diseño.');
+  });
+  $('#centerElement').addEventListener('click',()=>placeSelected(false));
+  $('#fitElement').addEventListener('click',()=>placeSelected(true));
+  $('#helpButton').addEventListener('click',()=>{
+    $('#quickHelp').open=!$('#quickHelp').open;
+    $('#helpButton').setAttribute('aria-expanded',$('#quickHelp').open);
+    if ($('#quickHelp').open) $('#quickHelp').scrollIntoView({block:'nearest'});
+  });
+  document.addEventListener('keydown',event=>{
+    const typing=event.target.closest('input,textarea,select,[contenteditable="true"]');
+    const key=event.key.toLowerCase(),mod=event.ctrlKey || event.metaKey;
+    if (mod && key==='s') {event.preventDefault();saveDesignFile();return;}
+    if (typing || document.querySelector('dialog[open]') || fileBusy) return;
+    if (mod && (key==='z' || key==='y')) {event.preventDefault();travelHistory(key==='y' || event.shiftKey ? 'redo' : 'undo');return;}
+    if (mod && key==='d') {event.preventDefault();$('#dupEl').click();return;}
+    if (key==='delete' && sel()) {event.preventDefault();$('#delEl').click();return;}
+    if (event.target===cv && ['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key) && sel()) {
+      event.preventDefault();const el=sel(),step=event.shiftKey ? 5 : 1;
+      if (event.key==='ArrowLeft') el.x-=step;if (event.key==='ArrowRight') el.x+=step;
+      if (event.key==='ArrowUp') el.y-=step;if (event.key==='ArrowDown') el.y+=step;
+      R.dirty=true;++composeSeq;persist();syncGeometry();draw();compose();
+    }
+  });
   buildSliders('text'); buildSliders('image');
   bindOptions();
   function prepareTonalImage(mode) {
@@ -1209,7 +1412,7 @@ async function init() {
   $('#contactTest').addEventListener('click', async () => {
     try {
       if (R.over?.contact_test) {
-        R.over = null; select(S.elements[0]?.id ?? null); compose(); draw();
+        R.over = null; select(S.elements.some(e=>e.id===R.previewSelection) ? R.previewSelection : S.elements[0]?.id ?? null); compose(); draw();
         $('#contactTest').textContent = 'Probar apoyo'; return;
       }
       showJob({ ...await api('/api/contact-test', {}), contact_test: true });

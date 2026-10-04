@@ -4,7 +4,7 @@
   "description": "Escribe y dibuja con pluma en la Bambu Lab A1",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#f1ede4",
+  "background_color": "#eef3f8",
   "theme_color": "#2743b8",
   "icons": [
     { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },

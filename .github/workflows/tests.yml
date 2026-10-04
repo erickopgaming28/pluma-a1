@@ -25,3 +25,19 @@ jobs:
         run: python -m pip install -r requirements.txt
       - name: Verificar sin impresora
         run: python -m unittest discover -s tests -v
+  editor:
+    name: Editor · computadora y móvil
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - name: Instalar herramientas del editor
+        run: npm ci
+      - name: Preparar navegador de prueba
+        run: npx playwright install --with-deps chromium
+      - name: Verificar diseño, historial y archivos sin impresora
+        run: npm run test:ui

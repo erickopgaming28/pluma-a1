@@ -8,7 +8,7 @@
 <meta name="theme-color" content="#2743b8">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
-<link rel="stylesheet" href="style.css?v=20261003-megarapido">
+<link rel="stylesheet" href="style.css?v=20261004-taller">
 </head>
 <body>
 <header class="top">
@@ -17,15 +17,25 @@
     <div><strong>Pluma A1</strong><span>Escribe y dibuja con tu Bambu Lab A1</span><span id="appVersion"></span></div>
   </div>
   <div class="top-actions">
+    <label class="theme-control"><span>Apariencia</span><select id="themeChoice"><option value="system">Automática</option><option value="light">Color claro</option><option value="dark">Oscura</option></select></label>
+    <button id="helpButton" class="btn ghost" type="button" aria-expanded="false" aria-controls="quickHelp">Cómo empezar</button>
     <button id="printerPill" class="pill" type="button"><i class="dot"></i><span>Impresora sin configurar</span></button>
     <button id="openSettings" class="btn ghost" type="button">Ajustes</button>
   </div>
 </header>
 
+<div class="design-bar" role="group" aria-label="Guardar y editar el diseño">
+  <label class="design-name"><span>Nombre del diseño</span><input id="designName" maxlength="80" value="Mi diseño" autocomplete="off"></label>
+  <div class="history-actions"><button id="undoDesign" class="btn ghost" type="button" title="Deshacer (Ctrl+Z)" disabled>Deshacer</button><button id="redoDesign" class="btn ghost" type="button" title="Rehacer (Ctrl+Mayús+Z)" disabled>Rehacer</button></div>
+  <div class="file-actions"><button id="newDesign" class="btn ghost" type="button">Nuevo</button><button id="openDesign" class="btn ghost" type="button">Abrir diseño</button><button id="saveDesign" class="btn" type="button">Guardar diseño</button></div>
+  <input id="projectFile" type="file" accept=".json,application/json" hidden>
+</div>
+
 <main>
   <aside class="panel">
-    <h1 class="editor-title">Tu hoja, a mano</h1>
-    <p class="editor-intro">Combina letras y bocetos. La vista previa muestra los trazos que recorrerá la pluma.</p>
+    <h1 class="editor-title">Tu taller de dibujo</h1>
+    <p class="editor-intro">Letras, retratos y puntos. Crea el diseño y revisa cómo lo recorrerá tu pluma o lápiz.</p>
+    <p id="saveHint" class="save-hint">Los cambios se guardan en este navegador. «Guardar diseño» descarga una copia con tus imágenes.</p>
     <div class="els">
       <div class="section-heading"><h2>Elementos</h2><span id="elementCount" class="count"></span></div>
       <div class="els-add">
@@ -55,6 +65,8 @@
         <button class="btn ghost" id="rotateRight" type="button">Girar +90°</button>
         <button class="btn ghost" id="rotateReset" type="button">Restablecer</button>
       </div>
+      <div class="placement-actions"><button id="centerElement" class="btn" type="button">Centrar elemento</button><button id="fitElement" class="btn" type="button">Hacer que quepa</button></div>
+      <p class="hint">Estos botones usan la zona alcanzable dentro de tus márgenes. Puedes seguir moviendo el elemento libremente.</p>
       <p class="hint">Gira el elemento alrededor de su centro. El dibujo se enviará con este ángulo.</p>
     </details>
 
@@ -94,11 +106,11 @@
       <div class="field">
         <span class="lbl">Cómo dibujar la imagen</span>
         <div class="seg image-modes" data-opt="image.mode">
-          <button data-v="trazo">Una línea</button><button data-v="contornos">Sólo bordes</button><button data-v="boceto">Boceto</button><button data-v="rayado">Sombreado</button>
+          <button data-v="trazo"><span>Una línea</span><small>Sigue el centro del trazo</small></button><button data-v="contornos"><span>Sólo bordes</span><small>Dibuja las siluetas</small></button><button data-v="boceto"><span>Boceto</span><small>Bordes con sombras</small></button><button data-v="rayado"><span>Sombreado</span><small>Sombras con líneas</small></button>
         </div>
-        <button class="btn wide photo-mode" type="button" data-photo-mode>Foto a líneas</button>
-        <button id="portraitMode" class="btn wide photo-mode" type="button" aria-pressed="false">Retrato con sombras</button>
-        <button id="stipplingMode" class="btn wide photo-mode" type="button" aria-pressed="false">Puntillismo</button>
+        <button class="btn wide photo-mode" type="button" data-photo-mode><span>Foto a líneas</span><small>Conserva los rasgos sin grises</small></button>
+        <button id="portraitMode" class="btn wide photo-mode" type="button" aria-pressed="false"><span>Retrato con sombras</span><small>Representa el volumen del rostro</small></button>
+        <button id="stipplingMode" class="btn wide photo-mode" type="button" aria-pressed="false"><span>Puntillismo</span><small>Luces y sombras con puntos</small></button>
       </div>
       <p id="imageModeHint" class="hint" role="status"></p>
       <div id="portraitStyles" class="field" hidden>
@@ -154,7 +166,7 @@
     </div>
     <p id="updateNotice" class="update-notice" role="status" hidden></p>
     <div id="banner" class="banner" hidden></div>
-    <div class="canvas-wrap"><canvas id="cv"></canvas><div id="busy" class="busy" role="status" hidden>Convirtiendo…</div></div>
+    <div class="canvas-wrap"><canvas id="cv" tabindex="0" aria-label="Hoja de trabajo: arrastra para mover; usa las flechas para desplazar el elemento seleccionado"></canvas><div id="emptyDesign" class="empty-design" hidden><strong>Una hoja para tu próxima idea</strong><span>Añade texto o una imagen desde el panel. También puedes arrastrar una imagen sobre la hoja.</span></div><div id="busy" class="busy" role="status" hidden>Convirtiendo…</div></div>
     <details class="preparation" open>
       <summary>Preparar la A1<svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="m6 8 4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
       <div class="preparation-actions">
@@ -164,6 +176,11 @@
         <button id="contactTest" class="btn ghost" type="button">Probar apoyo</button>
         <button id="movePrinter" class="btn" type="button">Mover A1…</button>
       </div>
+    </details>
+    <details id="quickHelp" class="quick-help">
+      <summary>El orden para preparar tu dibujo</summary>
+      <ol><li><b>Crea y acomoda.</b> Elige un estilo, recorta y gira. La zona rayada queda fuera del alcance.</li><li><b>Prepara la hoja y la punta.</b> Usa «Ubicar hoja», «Ajustar pluma» y «Probar apoyo». Retira o levanta la punta antes de referenciar los ejes; sigue las indicaciones de cada botón.</li><li><b>Revisa y envía.</b> Simula el trazo, elige la velocidad y revisa las opciones de envío. Al terminar, revisa que la punta marcó todas las zonas del papel.</li></ol>
+      <p>Deshacer y rehacer cambian tu diseño, no el trabajo que ya enviaste. Los colores de la imagen se dibujan cambiando las plumas a mano.</p>
     </details>
     <footer class="bar">
       <div class="drawing-summary"><span class="summary-label">Tu dibujo</span><div id="stats" class="stats" aria-live="polite">—</div></div>
@@ -426,6 +443,6 @@
 
 <div id="toast" class="toast" role="status" popover="manual"></div>
 <!-- type=module: las variables del programa no chocan con las que inyectan las extensiones del navegador -->
-<script type="module" src="app.js?v=20261003-megarapido"></script>
+<script type="module" src="app.js?v=20261004-taller"></script>
 </body>
 </html>

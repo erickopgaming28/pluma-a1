@@ -22,7 +22,7 @@ Pluma A1 convierte texto e imágenes en recorridos de pluma para una Bambu Lab A
 
 El editor separa la creación del diseño, la preparación de la A1 y el envío. Puedes mover los elementos libremente, incluso fuera de la hoja; el envío se bloquea mientras haya trazos fuera del alcance de la pluma. Puedes plegar **Posición, tamaño y rotación** para concentrarte en el texto o la imagen. La vista previa muestra las dimensiones de tu hoja y la interfaz se adapta a computadora, celular y al tema claro u oscuro del sistema.
 
-> **Estado:** proyecto experimental. Hay 102 pruebas del motor y revisión del editor en escritorio y móvil. Incluyen una imagen de 4000 × 4000 píxeles convertida, rotada, exportada y transmitida íntegramente a un receptor de prueba. El usuario observó dibujos con tinta desigual entre zonas y pausas durante la escritura; la uniformidad de contacto, fluidez y precisión todavía requieren comprobación física. Las capturas usan diseños de prueba, sin conexión a una impresora.
+> **Estado:** proyecto experimental. Hay 109 pruebas del motor, pruebas de historial/importación/ajuste y revisión del editor en escritorio y móvil. Incluyen una imagen de 4000 × 4000 píxeles convertida, rotada, exportada y transmitida íntegramente a un receptor de prueba. El usuario observó dibujos con tinta desigual entre zonas y pausas durante la escritura; la uniformidad de contacto, fluidez y precisión todavía requieren comprobación física. Las capturas usan diseños de prueba, sin conexión a una impresora.
 
 ## Crear tu diseño
 
@@ -36,6 +36,11 @@ El editor separa la creación del diseño, la preparación de la A1 y el envío.
 | **Comprobar el apoyo** | Prepara nueve cruces repartidas entre las zonas trasera, central y frontal. |
 | **Recortar imágenes** | Marco arrastrable, esquinas, porcentajes y encuadres rápidos. |
 | **Componer la hoja** | Mueve, duplica, redimensiona y rota cada texto o imagen. |
+| **Deshacer y rehacer** | Recupera cambios del diseño, incluidos borrados y apertura de otro archivo. |
+| **Guardar diseños** | Descarga un archivo editable con las imágenes incluidas y ábrelo en otra sesión. |
+| **Centrar y hacer caber** | Acomoda el elemento seleccionado dentro de los márgenes alcanzables, conservando su giro. |
+| **Ajustar con precisión** | Controles deslizantes y campos numéricos con explicaciones junto a cada opción. |
+| **Elegir apariencia** | Interfaz de color claro, oscura o automática, con colores por función. |
 | **Girar directamente** | Arrastra el círculo sobre el elemento o usa sus parámetros de ángulo. |
 | **Ampliar los ajustes** | Detalle, contraste, limpieza y sombreado hasta 300 %; los valores superiores a 100 % aparecen en rojo con «extra». |
 | **Organizar los márgenes** | Arrastra cada borde por separado o escribe su distancia en milímetros. |
@@ -47,6 +52,18 @@ El editor separa la creación del diseño, la preparación de la A1 y el envío.
 ### Recorta antes de dibujar
 
 El recorte cambia los trazos reales que recibe la pluma. Puedes ajustar el encuadre y volver al original. Las nuevas imágenes cargadas se conservan en la caché privada local `.image-cache`, excluida de Git, para recuperarlas al reiniciar el servidor. Las imágenes de versiones anteriores a esta caché deben cargarse una vez más. La caché guarda la imagen de trabajo, con un lado máximo de 1600 píxeles; el archivo de origen no se modifica.
+
+### Guarda, abre y recupera tu diseño
+
+La barra superior permite poner un nombre y usar **Guardar diseño**, **Abrir diseño**, **Nuevo**, **Deshacer** y **Rehacer**. El archivo `.pluma.json` incluye los elementos, ajustes y las imágenes de trabajo que usa la app. No incluye la IP, el código de acceso ni la calibración de la impresora. Admite hasta 100 elementos y 64 MB por archivo; los archivos personales de diseño están excluidos de Git.
+
+Al abrirlo, se conserva tu hoja, calibración y conjunto de plumas actual. La app avisa si el tamaño de hoja o los colores difieren; revisa la composición antes de enviar. Si una imagen original falta, vuelve a cargarla antes de guardar. El guardado en el navegador permite continuar en la misma sesión de origen, pero descargar el diseño es la forma de conservar una copia portátil.
+
+El historial conserva hasta 60 estados del diseño durante la sesión y agrupa cambios seguidos de un control. Permite recuperar elementos borrados, un diseño reemplazado o una hoja vaciada con **Nuevo**. No modifica márgenes, configuración ni un trabajo ya enviado. **Ctrl+Z** deshace y **Ctrl+Mayús+Z** o **Ctrl+Y** rehace fuera de campos de escritura; los campos conservan su deshacer habitual. **Ctrl+S** guarda el diseño y **Ctrl+D** duplica el elemento seleccionado. Con la hoja enfocada, las flechas mueven 1 mm; con Mayús, 5 mm.
+
+**Centrar elemento** mueve sin cambiar el tamaño. **Hacer que quepa** reduce y centra en la zona alcanzable dentro de los márgenes, conservando el ángulo. En texto también reduce la letra hasta 4 mm; si no hay espacio suficiente, indica que debes acortar el texto o cambiar la hoja. Los elementos pueden seguir moviéndose fuera de la zona mientras editas, pero el envío mantiene su validación física.
+
+**Cómo empezar** abre la guía del orden de preparación. **Apariencia** permite elegir color claro, oscuro o automático. Cada estilo de dibujo tiene una descripción, y los ajustes admiten valores numéricos exactos además de sus controles deslizantes. Las pantallas bajas permiten desplazar la página para conservar un área de dibujo útil.
 
 ![Recorte de una imagen con marco y controles de porcentaje](docs/assets/recorte.png)
 

@@ -2,6 +2,7 @@
 /config.json
 /config.tmp
 /.image-cache/
+*.pluma.json
 .env
 .env.*
 *.pem
