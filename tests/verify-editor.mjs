@@ -168,6 +168,31 @@ try {
       const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('pluma-a1')));
       assert.equal(saved.sel, 1); assert.equal(saved.elements[0].rotation, 37);
       assert.ok(Math.abs(saved.elements[0].x - 35) < 0.01);
+      // Move the rotated text outside the paper: the editor must retain that
+      // placement, while sending stays blocked until it is moved back inside.
+      const inside = structuredClone(saved.elements[0]);
+      const movedCenterX = cx + 5 * k, movedCenterY = cy + 3 * k;
+      await page.mouse.move(movedCenterX, movedCenterY); await page.mouse.down();
+      await page.mouse.move(movedCenterX - 65 * k, movedCenterY, { steps: 4 }); await page.mouse.up();
+      await page.waitForFunction(() => document.querySelector('#stats .warn') && document.querySelector('#send').disabled);
+      const outside = await page.evaluate(() => JSON.parse(localStorage.getItem('pluma-a1')).elements[0]);
+      assert.ok(Math.abs(outside.x + 30) < .01);
+      assert.equal(outside.rotation, 37);
+      await page.screenshot({ path: path.join(root, 'tests/artifacts/movimiento-libre-escritorio.png') });
+      // The warning may wrap the footer and resize the canvas: use its new scale.
+      const outsideCv = await page.locator('#cv').boundingBox();
+      const outsideK = Math.min((outsideCv.width - 48) / pw, (outsideCv.height - 36) / ph);
+      const outsideOx = outsideCv.x + (outsideCv.width - pw * outsideK) / 2;
+      const outsideOy = outsideCv.y + (outsideCv.height - ph * outsideK) / 2;
+      const backX = outsideOx + (outside.x + outside.w / 2) * outsideK;
+      const backY = outsideOy + (outside.y + fixture.text.h / 2) * outsideK;
+      await page.mouse.move(backX, backY); await page.mouse.down();
+      await page.mouse.move(backX + 65 * outsideK, backY, { steps: 4 }); await page.mouse.up();
+      await page.waitForFunction(() => !document.querySelector('#send').disabled);
+      const returned = await page.evaluate(() => JSON.parse(localStorage.getItem('pluma-a1')).elements[0]);
+      assert.ok(Math.abs(returned.x - inside.x) < .01);
+      assert.ok(Math.abs(returned.y - inside.y) < .01);
+      assert.equal(returned.w, inside.w); assert.equal(returned.rotation, inside.rotation);
       const current = saved.elements[0];
       const [hx, hy] = worldPoint({ x: current.x, y: current.y, w: current.w, h: fixture.text.h }, 37, current.w, fixture.text.h);
       const handleX = cv.x + ox + hx * k, handleY = cv.y + oy + hy * k;

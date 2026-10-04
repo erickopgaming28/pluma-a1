@@ -511,7 +511,6 @@ function bindCanvas() {
   cv.addEventListener('pointermove', e => {
     if (!R.view) return;
     const [x, y] = pagePoint(e);
-    const [dx0, dy0, dx1, dy1] = R.geo.drawable;
     if (!drag) {
       const cur = sel(), hit = hitElement(x, y);
       cv.style.cursor = cur && onHandle(cur, x, y) ? 'nwse-resize' : hit ? 'move' : 'default';
@@ -521,10 +520,9 @@ function bindCanvas() {
     }
     const el = drag.el, b = box(el);
     if (drag.mode === 'move') {
-      // dentro de la zona útil mientras el elemento quepa en ella
-      const rb = rotatedBounds(b, angleOf(el));
-      el.x = clamp(x - drag.dx, dx0 - (rb.x - b.x), dx1 - (rb.x - b.x) - rb.w);
-      el.y = clamp(y - drag.dy, dy0 - (rb.y - b.y), dy1 - (rb.y - b.y) - rb.h);
+      // La edición es libre; compose y el servidor comprueban el alcance al enviar.
+      el.x = x - drag.dx;
+      el.y = y - drag.dy;
     } else {
       const a = angleOf(el) * Math.PI / 180;
       el.w = clamp(2 * (Math.cos(a) * (x - drag.cx) + Math.sin(a) * (y - drag.cy)), 15, 400);
