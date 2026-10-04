@@ -14,14 +14,14 @@ const SLIDERS = {
     { k: 'human', label: 'Naturalidad (pulso de mano)', min: 0, max: 100, step: 1, unit: ' %' },
   ],
   image: [
-    { k: 'detail', label: 'Detalle de los contornos', min: 0, max: 100, step: 1, unit: ' %' },
-    { k: 'threshold', label: 'Oscuridad que se conserva', min: 40, max: 240, step: 1, unit: '' },
-    { k: 'photo_cleaning', label: 'Limpieza de textura en la foto', min: 0, max: 100, step: 1, unit: ' %' },
-    { k: 'shade', label: 'Cantidad de sombreado', min: 0, max: 100, step: 1, unit: ' %' },
-    { k: 'hatch_spacing', label: 'Separación del rayado', min: 0.6, max: 3, step: 0.1, unit: ' mm' },
-    { k: 'hatch_angle', label: 'Ángulo del rayado', min: 0, max: 180, step: 5, unit: '°' },
-    { k: 'brightness', label: 'Brillo', min: -50, max: 50, step: 1, unit: '' },
-    { k: 'contrast', label: 'Contraste', min: -50, max: 100, step: 1, unit: '' },
+    { k: 'detail', label: 'Detalle de los contornos', min: 0, max: 300, step: 1, unit: ' %' },
+    { k: 'threshold', label: 'Oscuridad que se conserva', min: 1, max: 254, step: 1, unit: '' },
+    { k: 'photo_cleaning', label: 'Limpieza de textura en la foto', min: 0, max: 300, step: 1, unit: ' %' },
+    { k: 'shade', label: 'Cantidad de sombreado', min: 0, max: 300, step: 1, unit: ' %' },
+    { k: 'hatch_spacing', label: 'Separación del rayado', min: 0.3, max: 10, step: 0.1, unit: ' mm' },
+    { k: 'hatch_angle', label: 'Ángulo del rayado', min: -360, max: 360, step: 5, unit: '°' },
+    { k: 'brightness', label: 'Brillo', min: -300, max: 300, step: 1, unit: ' %' },
+    { k: 'contrast', label: 'Contraste', min: -99, max: 300, step: 1, unit: ' %' },
   ],
 };
 const DEFAULTS = {
@@ -34,7 +34,8 @@ const SAMPLE = 'Querida Sofía:\n\nTe escribo esta carta sin tocar la pluma: la 
 const S = { elements: null, sel: null, nextId: 1 };
 // Estado de la sesión: conversiones, vista, trabajo compuesto, impresora.
 const R = { cfg: null, geo: null, rend: {}, seq: {}, thumbs: {}, view: null, job: null, over: null, dirty: false,
-            anim: null, sent: null, status: {}, penReady: false, fileTarget: 'sel', tasks: {}, asyncImages: false };
+            anim: null, sent: null, status: {}, penReady: false, fileTarget: 'sel', tasks: {}, asyncImages: false,
+            viewport: { zoom: 1, x: 0, y: 0 }, canvasTool: '', marginSaving: false };
 
 let legacy = null;
 try {
@@ -221,10 +222,19 @@ function buildSliders(group) {
     <label class="field"><span class="lbl">${c.label}<output></output></span>
     <input type="range" min="${c.min}" max="${c.max}" step="${c.step}" data-k="${c.k}" data-unit="${c.unit}"></label>`).join('');
   for (const inp of $$(`#${group}Sliders input`)) {
-    const show = () => (inp.previousElementSibling.lastElementChild.textContent = inp.value + inp.dataset.unit);
+    const show = () => {
+      const extra = group === 'image' && inp.dataset.unit === ' %' && Math.abs(+inp.value) > 100;
+      inp.closest('label').classList.toggle('extended', extra);
+      inp.previousElementSibling.lastElementChild.textContent = inp.value + inp.dataset.unit + (extra ? ' · extra' : '');
+      inp.setAttribute('aria-valuetext', inp.value + inp.dataset.unit + (extra ? ', supera el 100 por ciento' : ''));
+      paintExtendedHint();
+    };
     inp.addEventListener('input', () => { show(); setOpt(group, inp.dataset.k, +inp.value); });
     syncers.push(el => { if (el.type === group) { inp.value = el.opts[inp.dataset.k] ?? DEFAULTS[group][inp.dataset.k]; show(); } });
   }
+}
+function paintExtendedHint() {
+  $('#extendedHint').hidden = !$$('#imageSliders .extended').some(label => !label.hidden);
 }
 
 function bindOptions() {
@@ -312,6 +322,7 @@ function paintImageOptions(el) {
   $('[data-photo-mode]').setAttribute('aria-pressed', mode === 'fotolinea');
   $('#restoreCrop').disabled = !el.opts.crop;
   $('#cropSummary').textContent = el.opts.crop ? `Recorte: ${(el.opts.crop.w * 100).toFixed(1)} % del ancho × ${(el.opts.crop.h * 100).toFixed(1)} % del alto original.` : 'Se usa la imagen completa.';
+  paintExtendedHint();
 }
 function syncGeometry() {
   const el = sel(); if (!el) return;
@@ -374,8 +385,8 @@ function draw(limit = Infinity) {
   ctx.clearRect(0, 0, wrap.width, wrap.height);
   if (!R.geo) return;
   const [pw, ph] = R.geo.paper;
-  const k = Math.min((wrap.width - 48) / pw, (wrap.height - 36) / ph);
-  const ox = (wrap.width - pw * k) / 2, oy = (wrap.height - ph * k) / 2;
+  const k = Math.min((wrap.width - 48) / pw, (wrap.height - 36) / ph) * R.viewport.zoom;
+  const ox = (wrap.width - pw * k) / 2 + R.viewport.x, oy = (wrap.height - ph * k) / 2 + R.viewport.y;
   R.view = { k, ox, oy };
 
   ctx.save();
@@ -402,6 +413,14 @@ function draw(limit = Infinity) {
   ctx.setLineDash([4, 5]); ctx.strokeStyle = 'rgba(39,67,184,.35)'; ctx.lineWidth = 1;
   ctx.strokeRect(ox + dx0 * k, oy + dy0 * k, (dx1 - dx0) * k, (dy1 - dy0) * k);
   ctx.setLineDash([]);
+  if (R.canvasTool === 'margins') {
+    const m = margins(), x0 = m.left, y0 = m.top, x1 = pw - m.right, y1 = ph - m.bottom;
+    ctx.strokeStyle = '#2743b8'; ctx.lineWidth = 1.5;
+    ctx.strokeRect(ox + x0 * k, oy + y0 * k, (x1 - x0) * k, (y1 - y0) * k);
+    for (const [side, [x, y]] of Object.entries(marginHandles())) {
+      ctx.fillStyle = '#fdfcf8'; ctx.beginPath(); ctx.arc(ox + x * k, oy + y * k, 8, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    }
+  }
 
   ctx.lineCap = ctx.lineJoin = 'round';
   ctx.lineWidth = Math.max(0.7, 0.42 * k);
@@ -470,6 +489,10 @@ function draw(limit = Infinity) {
       ctx.fillStyle = '#2743b8';
       const [hx, hy] = b.points[2];
       ctx.fillRect(ox + hx * k - HANDLE, oy + hy * k - HANDLE, HANDLE * 2, HANDLE * 2);
+      const bb = box(el), top = worldPoint(bb, angleOf(el), bb.w / 2, 0), rot = rotationHandle(el);
+      ctx.strokeStyle = '#2743b8'; ctx.beginPath(); ctx.moveTo(ox + top[0] * k, oy + top[1] * k);
+      ctx.lineTo(ox + rot[0] * k, oy + rot[1] * k); ctx.stroke();
+      ctx.fillStyle = '#fdfcf8'; ctx.beginPath(); ctx.arc(ox + rot[0] * k, oy + rot[1] * k, 8, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     }
   }
 }
@@ -483,6 +506,44 @@ const onHandle = (el, x, y) => {
   const [hx, hy] = worldPoint(b, angleOf(el), b.w, b.h);
   return Math.abs(x - hx) < t && Math.abs(y - hy) < t;
 };
+const rotationHandle = el => { const b = box(el); return worldPoint(b, angleOf(el), b.w / 2, -32 / R.view.k); };
+const onRotation = (el, x, y) => { const [hx, hy] = rotationHandle(el); return Math.hypot(x - hx, y - hy) < 22 / R.view.k; };
+const margins = () => ({ left: R.cfg.paper.margin, top: R.cfg.paper.margin, right: R.cfg.paper.margin, bottom: R.cfg.paper.margin, ...R.cfg.paper.margins });
+function marginHandles() {
+  const m = margins(), [w, h] = R.geo.paper, cx = (m.left + w - m.right) / 2, cy = (m.top + h - m.bottom) / 2;
+  return { left: [m.left, cy], top: [cx, m.top], right: [w - m.right, cy], bottom: [cx, h - m.bottom] };
+}
+function hitMargin(x, y) {
+  return Object.entries(marginHandles()).find(([, [hx, hy]]) => Math.hypot(x - hx, y - hy) < 22 / R.view.k)?.[0];
+}
+function syncMargins() { for (const input of $$('[data-margin]')) input.value = +margins()[input.dataset.margin].toFixed(2); }
+function setCanvasTool(tool) {
+  R.canvasTool = tool;
+  $('#panView').setAttribute('aria-pressed', tool === 'pan'); $('#editMargins').setAttribute('aria-pressed', tool === 'margins');
+  $('#marginTools').hidden = tool !== 'margins'; syncMargins(); draw();
+  cv.style.cursor = tool === 'pan' ? 'grab' : 'default';
+}
+function zoomView(factor) {
+  R.viewport.zoom = clamp(R.viewport.zoom * factor, .5, 4);
+  $('#zoomValue').textContent = Math.round(R.viewport.zoom * 100) + ' %'; draw();
+}
+async function saveMargins(value) {
+  if (R.marginSaving) { syncMargins(); return; }
+  R.marginSaving = true; R.dirty = true; ++composeSeq; paintStats();
+  $('#editMargins').disabled = true;
+  $$('[data-margin], #resetMargins').forEach(input => input.disabled = true);
+  try {
+    const result = await api('/api/paper-layout', { margins: value });
+    R.cfg.paper = result.paper; R.geo = result.geometry;
+    S.elements.forEach(el => touch(el, true));
+    if (!S.elements.length) { R.dirty = false; paintStats(); }
+  } catch (error) { toast(error.message, true); await compose(); }
+  finally {
+    R.marginSaving = false; $('#editMargins').disabled = !R.paperLayout;
+    $$('[data-margin], #resetMargins').forEach(input => input.disabled = false);
+    syncMargins(); draw();
+  }
+}
 const hitElement = (x, y) => [...S.elements].reverse().find(el => {
   const b = box(el);
   const [u, v] = localPoint(b, angleOf(el), x, y);
@@ -493,10 +554,22 @@ let drag = null;
 function bindCanvas() {
   cv.addEventListener('pointerdown', e => {
     if (!R.view) return;
+    if (R.marginSaving) return;
+    if (R.canvasTool === 'pan' || e.button === 1) {
+      drag = { mode: 'pan', clientX: e.clientX, clientY: e.clientY, x: R.viewport.x, y: R.viewport.y };
+      cv.setPointerCapture(e.pointerId); e.preventDefault(); cv.style.cursor = 'grabbing'; return;
+    }
     if (R.over) { R.over = null; compose(); }
     const [x, y] = pagePoint(e);
     const cur = sel();
-    if (cur && onHandle(cur, x, y)) {
+    const side = R.canvasTool === 'margins' && hitMargin(x, y);
+    if (side) drag = { mode: 'margin', side, before: margins() };
+    else if (cur && onRotation(cur, x, y)) {
+      const b = box(cur), cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+      drag = { mode: 'rotate', el: cur, cx, cy, start: Math.atan2(y - cy, x - cx), angle: angleOf(cur) };
+      clearTimeout(rotationTimer);
+    }
+    else if (cur && onHandle(cur, x, y)) {
       const b = box(cur);
       drag = { mode: 'size', el: cur, cx: b.x + b.w / 2, cy: b.y + b.h / 2 };
       resizeCenters[cur.id] = [drag.cx, drag.cy];
@@ -506,23 +579,43 @@ function bindCanvas() {
       select(hit ? hit.id : null);
       if (hit) drag = { mode: 'move', el: hit, dx: x - hit.x, dy: y - hit.y };
     }
-    if (drag) { stopAnim(); cv.setPointerCapture(e.pointerId); e.preventDefault(); }
+    if (drag) {
+      stopAnim(); ++composeSeq;
+      if (drag.el) { R.dirty = true; paintStats(); }
+      cv.setPointerCapture(e.pointerId); e.preventDefault();
+    }
   });
   cv.addEventListener('pointermove', e => {
     if (!R.view) return;
+    if (drag?.mode === 'pan') {
+      R.viewport.x = drag.x + e.clientX - drag.clientX; R.viewport.y = drag.y + e.clientY - drag.clientY; draw(); return;
+    }
     const [x, y] = pagePoint(e);
     if (!drag) {
       const cur = sel(), hit = hitElement(x, y);
-      cv.style.cursor = cur && onHandle(cur, x, y) ? 'nwse-resize' : hit ? 'move' : 'default';
+      cv.style.cursor = R.canvasTool === 'pan' ? 'grab' : R.canvasTool === 'margins' && hitMargin(x, y) ? 'crosshair'
+        : cur && onRotation(cur, x, y) ? 'grab' : cur && onHandle(cur, x, y) ? 'nwse-resize' : hit ? 'move' : 'default';
       const h = hit ? hit.id : null;
       if (h !== R.hover) { R.hover = h; if (!R.anim) draw(); }
       return;
     }
-    const el = drag.el, b = box(el);
+    if (drag.mode === 'margin') {
+      const m = margins(), [w, h] = R.geo.paper, side = drag.side;
+      m[side] = +clamp(side === 'left' ? x : side === 'top' ? y : side === 'right' ? w - x : h - y, 0, 100).toFixed(1);
+      const [rx0, ry0, rx1, ry1] = R.geo.reach;
+      if (Math.min(w - m.right, rx1) - Math.max(m.left, rx0) >= 10 && Math.min(h - m.bottom, ry1) - Math.max(m.top, ry0) >= 10) {
+        R.cfg.paper.margins = m; syncMargins(); draw();
+      }
+      return;
+    }
+    const el = drag.el;
     if (drag.mode === 'move') {
       // La edición es libre; compose y el servidor comprueban el alcance al enviar.
       el.x = x - drag.dx;
       el.y = y - drag.dy;
+    } else if (drag.mode === 'rotate') {
+      el.rotation = normalizeAngle(drag.angle + (Math.atan2(y - drag.cy, x - drag.cx) - drag.start) * 180 / Math.PI);
+      $('#rotationAngle').value = $('#rotationSlider').value = +el.rotation.toFixed(1);
     } else {
       const a = angleOf(el) * Math.PI / 180;
       el.w = clamp(2 * (Math.cos(a) * (x - drag.cx) + Math.sin(a) * (y - drag.cy)), 15, 400);
@@ -536,6 +629,11 @@ function bindCanvas() {
     if (!drag) return;
     const d = drag;
     drag = null;
+    if (d.mode === 'pan') { cv.style.cursor = R.canvasTool === 'pan' ? 'grab' : 'default'; return; }
+    if (d.mode === 'margin') {
+      const value = margins(); R.cfg.paper.margins = d.before;
+      saveMargins(value); return;
+    }
     syncGeometry();
     persist();
     if (d.mode === 'size') touch(d.el, true); else { paintStats(); compose(); }
@@ -577,6 +675,7 @@ async function loadImage(file, target) {
     let el = target === 'sel' ? sel() : null;
     if (el && el.type === 'image') { el.imageId = r.id; delete el.opts.crop; }
     else el = addImage(r.id);
+    el.original = { x: el.x, y: el.y, w: el.w, rotation: 0, colorMode: el.colorMode, pen: el.pen };
     R.thumbs[el.id] = imagePreview(el);
     select(el.id);
     touch(el, true);
@@ -857,6 +956,7 @@ function readSettings() {
     out[a][b] = el.type === 'checkbox' ? el.checked : el.type === 'number' ? (+el.value || 0) : el.value.trim();
   }
   if (foundName) out.printer.name = foundName;
+  out.paper.margins = out.paper.margin === R.cfg.paper.margin ? R.cfg.paper.margins ?? null : null;
   return out;
 }
 async function saveConfig(data, quiet) {
@@ -908,10 +1008,16 @@ async function init() {
   const st = await api('/api/state');
   R.cfg = st.config; R.geo = st.geometry;
   R.asyncImages = !!st.features?.async_images;
+  R.paperLayout = !!st.features?.paper_layout;
+  $('#editMargins').disabled = !R.paperLayout;
+  if (!st.features?.extended_images) for (const c of SLIDERS.image) {
+    if (['detail', 'shade', 'photo_cleaning', 'contrast'].includes(c.k)) c.max = 100;
+    if (c.k === 'brightness') { c.min = -100; c.max = 100; }
+  }
   $('#openMotion').hidden = false;
   $('#openMotion').disabled = !st.features?.motion_settings;
-  $('#updateNotice').hidden = !!st.features?.motion_settings;
-  $('#updateNotice').textContent = 'Actualización preparada: cuando termine el dibujo, cierra la terminal de Pluma A1 y vuelve a abrir Iniciar Pluma A1.bat. Después recarga esta página para activar el envío mejorado y los controles de velocidad.';
+  $('#updateNotice').hidden = !!st.features?.motion_settings && !!st.features?.extended_images && R.paperLayout;
+  $('#updateNotice').textContent = 'Actualización preparada: cuando termine el dibujo, cierra la terminal de Pluma A1 y vuelve a abrir Iniciar Pluma A1.bat. Después recarga esta página para activar los ajustes hasta 300 % y los márgenes arrastrables.';
   paintMotion();
   $('#appVersion').textContent = st.app_version ? `Versión ${st.app_version}` : 'Versión anterior: reinicia la terminal para cargar las mejoras';
   $('#lanUrl').textContent = st.lan_url || 'no disponible (sin red local)';
@@ -921,11 +1027,21 @@ async function init() {
     const first = addText(legacy && legacy.content || SAMPLE, legacy && legacy.text);
     S.sel = first.id;
   }
-  S.elements.forEach(el => { el.opts = { ...DEFAULTS[el.type], ...el.opts }; });
+  S.elements.forEach(el => {
+    el.opts = { ...DEFAULTS[el.type], ...el.opts };
+    if (el.type === 'image' && !el.original) el.original = { x: el.x, y: el.y, w: el.w, rotation: 0, colorMode: el.colorMode, pen: el.pen };
+  });
   buildFonts(st.fonts);
   buildSliders('text'); buildSliders('image');
   bindOptions();
   bindCanvas();
+  $('#panView').addEventListener('click', () => setCanvasTool(R.canvasTool === 'pan' ? '' : 'pan'));
+  $('#editMargins').addEventListener('click', () => setCanvasTool(R.canvasTool === 'margins' ? '' : 'margins'));
+  $('#zoomIn').addEventListener('click', () => zoomView(1.25));
+  $('#zoomOut').addEventListener('click', () => zoomView(.8));
+  $('#centerView').addEventListener('click', () => { R.viewport = { zoom: 1, x: 0, y: 0 }; $('#zoomValue').textContent = '100 %'; draw(); });
+  for (const input of $$('[data-margin]')) input.addEventListener('change', () => saveMargins({ ...margins(), [input.dataset.margin]: input.valueAsNumber }));
+  $('#resetMargins').addEventListener('click', () => saveMargins(null));
   syncPanel();
 
   const cropEditor = createCropEditor((el, crop) => {
@@ -938,6 +1054,12 @@ async function init() {
     const el = sel(); if (el?.type !== 'image') return;
     el.opts = { ...DEFAULTS.image, ...(el.opts.crop ? { crop: el.opts.crop } : {}) };
     touch(el, true); syncPanel();
+  });
+  $('#resetOriginalImage').addEventListener('click', () => {
+    const el = sel(); if (el?.type !== 'image') return;
+    stopAnim(); clearTimeout(rotationTimer); delete resizeCenters[el.id];
+    Object.assign(el, el.original); el.opts = { ...DEFAULTS.image };
+    touch(el, true); syncPanel(); draw();
   });
   for (const k of ['x', 'y', 'w', 'h']) $('#element' + k.toUpperCase()).addEventListener('change', e => setGeometry(k, e.target.valueAsNumber));
   $('#thumb').addEventListener('error', () => { $('#thumb').hidden = true; });

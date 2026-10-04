@@ -77,17 +77,18 @@ def _smooth(p, win=5):
 
 
 def _contours(g, detail, ppm):
-    sigma = 3.0 + (0.8 - 3.0) * detail
-    hi = 140 + (40 - 140) * detail
+    normal, extra = min(detail, 1), max(0, detail - 1)
+    sigma = (3.0 - 2.2 * normal) / (1 + 1.5 * extra)
+    hi = (140 - 100 * normal) / (1 + 2 * extra)
     blur = cv2.GaussianBlur(g, (0, 0), sigma)
     edges = cv2.Canny(blur, hi * 0.4, hi, L2gradient=True)
     edges = cv2.ximgproc.thinning(edges)
-    min_len = (4.0 + (1.0 - 4.0) * detail) * ppm
+    min_len = (4.0 - 3.0 * normal) * ppm / (1 + 2 * extra)
     out = []
     for p in _trace(edges):
         if len(p) < min_len:
             continue
-        out.append(pathops.simplify(_smooth(p), 0.6))
+        out.append(pathops.simplify(_smooth(p, 3 if extra else 5), 0.6 / (1 + 1.5 * extra)))
     return out
 
 
@@ -116,8 +117,10 @@ def _centerlines(g, detail, ppm, threshold):
     """Un trazo por el centro de las zonas oscuras, sin sus dos bordes."""
     mask = cv2.threshold(cv2.GaussianBlur(g, (0, 0), 0.6), threshold, 255, cv2.THRESH_BINARY_INV)[1]
     skeleton = cv2.ximgproc.thinning(mask)
-    min_len = (4.0 - 3.0 * detail) * ppm
-    return [pathops.simplify(_smooth(p), 0.6) for p in _trace(skeleton) if len(p) >= max(2, min_len)]
+    extra = max(0, detail - 1)
+    min_len = (4.0 - 3.0 * min(detail, 1)) * ppm / (1 + 2 * extra)
+    return [pathops.simplify(_smooth(p, 3 if extra else 5), 0.6 / (1 + 1.5 * extra))
+            for p in _trace(skeleton) if len(p) >= max(2, min_len)]
 
 
 def _photo_lines(g, detail, cleaning, ppm):
@@ -133,11 +136,13 @@ def _photo_lines(g, detail, cleaning, ppm):
     gradients = magnitude[magnitude > 8]
     if not gradients.size:
         return []
-    high = float(np.clip(np.percentile(gradients, 80) * (1.25 - .8 * detail), 18, 220))
+    extra = max(0, detail - 1)
+    high = float(np.clip(np.percentile(gradients, 80) * (1.25 - .8 * min(detail, 1)) / (1 + 2 * extra),
+                         18 / (1 + 2 * extra), 220))
     edges = cv2.Canny(filtered, high * .35, high, L2gradient=True)
     edges = cv2.ximgproc.thinning(edges)
-    minimum = max(3, (.35 + .65 * (1 - detail)) * ppm)
-    return [pathops.simplify(_smooth(p, 3), .25 + .35 * cleaning)
+    minimum = max(2 if extra else 3, (.35 + .65 * (1 - min(detail, 1))) * ppm / (1 + extra))
+    return [pathops.simplify(_smooth(p, 3), (.25 + .35 * cleaning) / (1 + extra))
             for p in _trace(edges) if pathops.length(p) >= minimum]
 
 
@@ -187,7 +192,10 @@ def _hatch(dark, o, ppm, rng, turn=0.0):
     shade = float(o.get("shade", 50)) / 100.0
     sp = float(o.get("hatch_spacing", 1.2)) * ppm
     ang = float(o.get("hatch_angle", 45)) + turn
-    shift = (shade - 0.5) * 0.5
+    # Above 100%, strengthen existing tones without turning white paper into ink.
+    if shade > 1:
+        dark = np.power(dark, 1 / shade)
+    shift = (min(shade, 1) - 0.5) * 0.5
     if o.get("cross", True):
         layers = [(0.28, ang, 0), (0.46, ang + 90, 0), (0.62, ang, sp / 2), (0.78, ang + 90, sp / 2)]
     else:
@@ -216,6 +224,15 @@ def make_sketch(rgb, o, width_mm, pens=None, progress=None, cancelled=None):
     report(5, 'Preparando el recorte y el tamaño de la imagen…')
     if not math.isfinite(width_mm) or width_mm <= 0:
         raise ValueError('El ancho del dibujo debe ser mayor que cero.')
+    for key, default, lo, hi in [('detail', 55, 0, 300), ('photo_cleaning', 65, 0, 300),
+                                 ('shade', 50, 0, 300), ('contrast', 0, -99, 300),
+                                 ('brightness', 0, -300, 300), ('hatch_angle', 45, -360, 360)]:
+        try:
+            value = float(o.get(key, default))
+        except (TypeError, ValueError):
+            raise ValueError(f'Revisa {key}: usa un número entre {lo} y {hi}.')
+        if isinstance(o.get(key), bool) or not math.isfinite(value) or not lo <= value <= hi:
+            raise ValueError(f'Revisa {key}: usa un número entre {lo} y {hi}.')
     spacing = float(o.get('hatch_spacing', 1.2))
     if not math.isfinite(spacing) or not 0.3 <= spacing <= 10:
         raise ValueError('La separación del sombreado debe estar entre 0.3 y 10 mm.')
@@ -245,8 +262,6 @@ def make_sketch(rgb, o, width_mm, pens=None, progress=None, cancelled=None):
         lines = _centerlines(g, float(o.get('detail', 55)) / 100.0, ppm, threshold)
     if mode == 'fotolinea':
         detail, cleaning = float(o.get('detail', 65)), float(o.get('photo_cleaning', 65))
-        if not np.isfinite([detail, cleaning]).all() or not 0 <= min(detail, cleaning) <= max(detail, cleaning) <= 100:
-            raise ValueError('El detalle y la limpieza de fotografía deben estar entre 0 y 100.')
         lines = _photo_lines(g, detail / 100, cleaning / 100, ppm)
     layers = {}
     if not pens or len(pens) < 2:

@@ -61,6 +61,13 @@ def validate_config(cfg):
         raise ValueError("La altura de viaje debe superar la de escritura al menos 1 mm.")
     if cfg['paper'].get('size') not in (*PAPER_SIZES, 'custom'):
         raise ValueError("Elige un tamaño de hoja válido.")
+    margins = cfg['paper'].get('margins')
+    if margins is not None:
+        if not isinstance(margins, dict) or set(margins) != {'left', 'top', 'right', 'bottom'}:
+            raise ValueError('Indica los cuatro márgenes de la hoja.')
+        for value in margins.values():
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not 0 <= value <= 100:
+                raise ValueError('Cada margen debe estar entre 0 y 100 mm.')
     x0, y0, x1, y1 = drawable(cfg)
     if x1 - x0 < 10 or y1 - y0 < 10:
         raise ValueError("No queda una zona útil de al menos 10 × 10 mm. Revisa hoja, posición y márgenes.")
@@ -85,9 +92,13 @@ def reach(cfg):
 def drawable(cfg):
     """Zona útil: alcance de la pluma menos los márgenes de la hoja."""
     pw, ph = paper_dims(cfg["paper"])
-    m = float(cfg["paper"]["margin"])
+    m = paper_margins(cfg['paper'])
     x0, y0, x1, y1 = reach(cfg)
-    return (max(m, x0), max(m, y0), min(pw - m, x1), min(ph - m, y1))
+    return (max(m['left'], x0), max(m['top'], y0), min(pw - m['right'], x1), min(ph - m['bottom'], y1))
+
+
+def paper_margins(paper):
+    return paper.get('margins') or dict.fromkeys(('left', 'top', 'right', 'bottom'), float(paper['margin']))
 
 
 def estimate_seconds(st, pen):

@@ -22,7 +22,7 @@ Pluma A1 convierte texto e imágenes en recorridos de pluma para una Bambu Lab A
 
 El editor separa la creación del diseño, la preparación de la A1 y el envío. Puedes mover los elementos libremente, incluso fuera de la hoja; el envío se bloquea mientras haya trazos fuera del alcance de la pluma. Puedes plegar **Posición, tamaño y rotación** para concentrarte en el texto o la imagen. La vista previa muestra las dimensiones de tu hoja y la interfaz se adapta a computadora, celular y al tema claro u oscuro del sistema.
 
-> **Estado:** proyecto experimental. Hay 88 pruebas del motor y revisión del editor en escritorio y móvil. Incluyen una imagen de 4000 × 4000 píxeles convertida, rotada, exportada y transmitida íntegramente a un receptor de prueba. El usuario observó dibujos con tinta desigual entre zonas y pausas durante la escritura; la uniformidad de contacto, fluidez y precisión todavía requieren comprobación física. Las capturas usan diseños de prueba, sin conexión a una impresora.
+> **Estado:** proyecto experimental. Hay 95 pruebas del motor y revisión del editor en escritorio y móvil. Incluyen una imagen de 4000 × 4000 píxeles convertida, rotada, exportada y transmitida íntegramente a un receptor de prueba. El usuario observó dibujos con tinta desigual entre zonas y pausas durante la escritura; la uniformidad de contacto, fluidez y precisión todavía requieren comprobación física. Las capturas usan diseños de prueba, sin conexión a una impresora.
 
 ## Crear tu diseño
 
@@ -35,6 +35,11 @@ El editor separa la creación del diseño, la preparación de la A1 y el envío.
 | **Comprobar el apoyo** | Prepara nueve cruces repartidas entre las zonas trasera, central y frontal. |
 | **Recortar imágenes** | Marco arrastrable, esquinas, porcentajes y encuadres rápidos. |
 | **Componer la hoja** | Mueve, duplica, redimensiona y rota cada texto o imagen. |
+| **Girar directamente** | Arrastra el círculo sobre el elemento o usa sus parámetros de ángulo. |
+| **Ampliar los ajustes** | Detalle, contraste, limpieza y sombreado hasta 300 %; los valores superiores a 100 % aparecen en rojo con «extra». |
+| **Organizar los márgenes** | Arrastra cada borde por separado o escribe su distancia en milímetros. |
+| **Mover la vista** | Desplaza la hoja, acerca o aleja entre 50 % y 400 %, y vuelve a centrarla. |
+| **Restablecer una imagen** | Recupera sus ajustes, recorte completo, color, posición, tamaño y giro iniciales guardados. |
 | **Cambiar de color** | Capas por pluma y pausas para el cambio manual. |
 | **Revisar y conservar** | Simulación de recorrido y exportación SVG, G-code y paquete 3MF. |
 
@@ -45,6 +50,16 @@ El recorte cambia los trazos reales que recibe la pluma. Puedes ajustar el encua
 ![Recorte de una imagen con marco y controles de porcentaje](docs/assets/recorte.png)
 
 **Una línea** funciona mejor con dibujos y letras oscuros sobre fondo claro. Formas separadas o ramificadas pueden necesitar varios recorridos y levantadas. Si el original ya es una figura hueca, sus dos lados pueden seguir siendo trazos distintos.
+
+### Ajustes, márgenes y vista
+
+Los porcentajes de imagen admiten un rango ampliado: detalle, limpieza y sombreado de 0 a 300 %, contraste de −99 a 300 % y brillo de −300 a 300 %. Al superar el 100 % en magnitud, se muestran en rojo con «extra». Un ajuste elevado puede recuperar líneas tenues o aumentar ruido, trazos y tiempo de preparación. La oscuridad de **Una línea** usa un umbral de gris de 1 a 254, no un porcentaje. El rayado admite separación de 0.3 a 10 mm y ángulo de −360 a 360°.
+
+**Restablecer ajustes del dibujo** conserva el encuadre y la colocación. **Restablecer imagen original** también elimina el recorte y recupera la colocación, tamaño, giro y color iniciales de ese elemento. En diseños guardados antes de esta función, la colocación existente al cargarlos se toma como punto inicial; no hay un historial anterior de posiciones. Los originales siguen disponibles mientras estén cargados en el servidor.
+
+Activa **Editar márgenes** y arrastra los tiradores del centro de los cuatro bordes; también puedes escribir cada margen. Se guardan para los siguientes dibujos, conservando las alturas y la calibración. **Restablecer márgenes** recupera el margen uniforme definido en Ajustes. Estas guías no amplían el alcance físico: puedes colocar elementos fuera de ellas, pero el servidor rechaza cualquier trazo fuera de la zona alcanzable.
+
+**Mover vista** arrastra la hoja sin cambiar las coordenadas del diseño ni la ubicación física del papel. Los botones de acercar y alejar sólo cambian la vista, y **Centrar hoja** restablece el encuadre al 100 %. El círculo superior gira el elemento alrededor de su centro, también cuando la vista está desplazada o ampliada.
 
 ## Empezar en Windows
 

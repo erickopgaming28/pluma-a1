@@ -93,7 +93,7 @@ class ContactAndPhotoTests(unittest.TestCase):
 
     def test_photo_parameters_crop_and_darkest_pen(self):
         rgb = self.tone_image()
-        for cleaning in (-1, 101, float('nan')):
+        for cleaning in (-1, 301, float('nan')):
             with self.assertRaises(ValueError):
                 sketch.make_sketch(rgb, {'mode': 'fotolinea', 'photo_cleaning': cleaning}, 80)
         layers, height = sketch.make_sketch(rgb, {'mode': 'fotolinea', 'crop': {'x': 0, 'y': 0, 'w': .5, 'h': 1}},

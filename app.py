@@ -22,13 +22,13 @@ from plotter import fonts, gcode, handwriting, pathops, printer, sketch, stream,
 ROOT = Path(__file__).resolve().parent
 CONFIG_FILE = ROOT / "config.json"
 PORT = 8765
-APP_VERSION = '2026.10.03.14'
+APP_VERSION = '2026.10.03.15'
 WORKSPACE_ID = str(uuid.uuid5(uuid.NAMESPACE_URL, str(ROOT).casefold()))
 
 DEFAULT_CONFIG = {
     "printer": {"ip": "", "serial": "", "access_code": "", "name": "", "material": "PLA", "transport": "stream"},
     "paper": {"size": "carta", "width": 215.9, "height": 279.4, "landscape": False,
-              "bed_x": 20.0, "bed_y": 0.0, "margin": 12.0},
+              "bed_x": 20.0, "bed_y": 0.0, "margin": 12.0, "margins": None},
     "pen": {"offset_x": 0.0, "offset_y": -35.0, "z_down": 3.0, "z_up": 6.0,
             "draw_speed": 40, "travel_speed": 150, "z_speed": 20, "accel": 2500,
             "pause_for_pen": True, "level_bed": True},
@@ -182,7 +182,7 @@ def api_state():
     for fid, label in fonts.CATALOG:
         font_list.append({"id": fid, "label": label, "sample": font_sample(fonts.get_font(fid))})
     return jsonify({"config": public_config(), "fonts": font_list, "geometry": geometry(),
-                    'app_version': APP_VERSION, 'features': {'async_images': True, 'motion_settings': True},
+                    'app_version': APP_VERSION, 'features': {'async_images': True, 'motion_settings': True, 'extended_images': True, 'paper_layout': True},
                     "paper_sizes": gcode.PAPER_SIZES, "lan_url": lan_url()})
 
 
@@ -202,6 +202,8 @@ def api_config():
     for k in ("printer", "paper", "pen"):
         if isinstance(data.get(k), dict):
             candidate[k].update({key: value for key, value in data[k].items() if key in DEFAULT_CONFIG[k]})
+    if isinstance(data.get('paper'), dict) and 'margin' in data['paper'] and 'margins' not in data['paper']:
+        candidate['paper']['margins'] = None
     if isinstance(data.get("pens"), list) and data["pens"]:
         candidate["pens"] = [{"name": str(p.get("name", "Pluma")).replace('\n', ' ').replace('\r', ' ')[:20], "color": str(p.get("color", "#000000"))}
                           for p in data["pens"][:8]]
@@ -214,6 +216,27 @@ def api_config():
     config.clear()
     config.update(candidate)
     return jsonify({"config": public_config(), "geometry": geometry()})
+
+
+@app.post('/api/paper-layout')
+def api_paper_layout():
+    """Change layout guides only; never modify pen calibration or move the printer."""
+    data = request.get_json(force=True)
+    if not isinstance(data, dict) or set(data) != {'margins'}:
+        raise ValueError('Sólo se permiten los márgenes de la hoja.')
+    if not dispatch_lock.acquire(blocking=False):
+        raise ValueError('Espera a que termine la preparación del envío para guardar el margen.')
+    try:
+        candidate = copy.deepcopy(config)
+        candidate['paper']['margins'] = data['margins']
+        gcode.validate_config(candidate)
+        temporary = CONFIG_FILE.with_suffix('.tmp')
+        temporary.write_text(json.dumps(candidate, indent=2, ensure_ascii=False), encoding='utf-8')
+        temporary.replace(CONFIG_FILE)
+        config['paper'].update(candidate['paper'])
+        return jsonify(paper=config['paper'], geometry=geometry())
+    finally:
+        dispatch_lock.release()
 
 
 @app.post('/api/motion-settings')
@@ -596,7 +619,8 @@ def api_preflight():
     pw, ph = gcode.paper_dims(config['paper'])
     x0, y0, x1, y1 = gcode.drawable(config)
     warnings = []
-    if x0 > config['paper']['margin'] or y0 > config['paper']['margin'] or x1 < pw - config['paper']['margin'] or y1 < ph - config['paper']['margin']:
+    margins = gcode.paper_margins(config['paper'])
+    if x0 > margins['left'] or y0 > margins['top'] or x1 < pw - margins['right'] or y1 < ph - margins['bottom']:
         warnings.append('Parte de la hoja queda fuera del alcance. Sólo se dibuja dentro de la zona útil.')
     return jsonify({'ok': True, 'seconds': st['seconds'], 'lifts': st['lifts'], 'pens': len(layers),
                     'warnings': warnings, 'area': [round(x1-x0, 1), round(y1-y0, 1)]})

@@ -31,6 +31,13 @@ try {
     page.on('pageerror', e => errors.push(e.message));
     let rendered = new Map(), tasks = new Map(), slowNext = false, taskNumber = 0;
     let motionPen = structuredClone(fixture.state.config.pen), savedSpeeds = 0;
+    let editorPaper = structuredClone(fixture.state.config.paper), savedMargins = [];
+    const editorGeometry = () => {
+      const geo = structuredClone(fixture.state.geometry), m = editorPaper.margins || Object.fromEntries(['left','top','right','bottom'].map(k => [k, editorPaper.margin]));
+      const [w,h] = geo.paper, [x0,y0,x1,y1] = geo.reach;
+      geo.drawable = [Math.max(m.left,x0), Math.max(m.top,y0), Math.min(w-m.right,x1), Math.min(h-m.bottom,y1)];
+      return geo;
+    };
     let motionSettingsSupported = true;
     const canceled = [];
     function convert(body) {
@@ -50,7 +57,17 @@ try {
       const url = new URL(route.request().url());
       const endpoint = url.pathname;
       let data;
-      if (endpoint === '/api/state') data = { ...fixture.state, config: { ...fixture.state.config, pen: motionPen }, app_version: '2026.10.03.14', features: { async_images: true, motion_settings: motionSettingsSupported } };
+      if (endpoint === '/api/state') data = { ...fixture.state, geometry: editorGeometry(), config: { ...fixture.state.config, paper: editorPaper, pen: motionPen }, app_version: '2026.10.03.15', features: { async_images: true, motion_settings: motionSettingsSupported, extended_images: true, paper_layout: true } };
+      else if (endpoint === '/api/paper-layout') {
+        const value = route.request().postDataJSON().margins;
+        savedMargins.push(value); editorPaper.margins = value;
+        data = { paper: editorPaper, geometry: editorGeometry() };
+      }
+      else if (endpoint === '/api/config') {
+        const settings = route.request().postDataJSON();
+        Object.assign(editorPaper, settings.paper); Object.assign(motionPen, settings.pen);
+        data = { config: { ...fixture.state.config, paper: editorPaper, pen: motionPen }, geometry: editorGeometry() };
+      }
       else if (endpoint === '/api/motion-settings') {
         Object.assign(motionPen, route.request().postDataJSON()); savedSpeeds++;
         data = { pen: motionPen, next_job_only: true };
@@ -78,6 +95,7 @@ try {
       } else if (endpoint === '/api/compose') {
         const body = route.request().postDataJSON(); compositions.push(body);
         data = structuredClone(fixture.job);
+        data.geometry = editorGeometry();
         const [x0, y0, x1, y1] = data.geometry.reach;
         data.outside = body.items.some(it => {
           const r = rendered.get(it.render_id);
@@ -276,7 +294,7 @@ try {
     assert.ok(canceled.includes(obsolete));
     assert.equal(conversions.at(-1).opts.mode, 'trazo');
     assert.ok(!compositions.at(-1).items.some(it => it.render_id === tasks.get(obsolete).result.render_id));
-    assert.equal(await page.locator('#appVersion').textContent(), 'Versión 2026.10.03.14');
+    assert.equal(await page.locator('#appVersion').textContent(), 'Versión 2026.10.03.15');
     await page.locator('[data-photo-mode]').click();
     await page.waitForFunction(() => !document.querySelector('#send').disabled && document.querySelector('#busy').hidden);
     assert.equal(conversions.at(-1).opts.mode, 'fotolinea');
@@ -284,6 +302,77 @@ try {
     assert.ok(await page.locator('[data-k="photo_cleaning"]').isVisible());
     assert.ok(!await page.locator('[data-k="threshold"]').isVisible());
     assert.ok(!await page.locator('[data-k="hatch_spacing"]').isVisible());
+    // Extended controls reach the conversion API, warn in text/color, and reset.
+    await page.locator('[data-k="contrast"]').fill('220');
+    await page.locator('[data-k="detail"]').fill('240');
+    await page.waitForFunction(() => document.querySelector('#busy').hidden && !document.querySelector('#send').disabled);
+    await page.waitForTimeout(300);
+    assert.equal(conversions.at(-1).opts.contrast, 220);
+    assert.equal(conversions.at(-1).opts.detail, 240);
+    assert.ok(await page.locator('[data-k="contrast"]').evaluate(el => el.closest('label').classList.contains('extended')));
+    assert.ok(await page.locator('#extendedHint').isVisible());
+    await page.screenshot({ path: path.join(root, 'tests/artifacts/ajustes-extra-' + name + '.png'), fullPage: name === 'movil' });
+    // Pan/zoom affect the view only. Centering restores the original canvas.
+    const beforeView = await page.evaluate(() => localStorage.getItem('pluma-a1'));
+    await page.locator('#panView').click(); await page.locator('#cv').scrollIntoViewIfNeeded();
+    let canvas = await page.locator('#cv').boundingBox();
+    const viewBefore = await page.locator('#cv').screenshot();
+    await page.mouse.move(canvas.x + canvas.width / 2, canvas.y + canvas.height / 2);
+    await page.mouse.down(); await page.mouse.move(canvas.x + canvas.width / 2 + 45, canvas.y + canvas.height / 2 + 25, { steps: 6 }); await page.mouse.up();
+    assert.notDeepEqual(await page.locator('#cv').screenshot(), viewBefore);
+    await page.locator('#zoomIn').click(); assert.equal(await page.locator('#zoomValue').textContent(), '125 %');
+    await page.locator('#centerView').click(); assert.equal(await page.locator('#zoomValue').textContent(), '100 %');
+    assert.equal(await page.evaluate(() => localStorage.getItem('pluma-a1')), beforeView);
+    await page.locator('#panView').click();
+    await page.locator('#zoomIn').click();
+    // Rotation handle turns the image itself, leaving size and position intact.
+    const selected = await page.evaluate(() => JSON.parse(localStorage.getItem('pluma-a1')).elements.find(e => e.id === 2));
+    const renderedImage = rendered.get(compositions.at(-1).items.find(it => it.render_id.includes('-2-')).render_id);
+    await page.locator('#cv').scrollIntoViewIfNeeded(); canvas = await page.locator('#cv').boundingBox();
+    const [pw,ph] = fixture.state.geometry.paper;
+    let k = Math.min((canvas.width - 48) / pw, (canvas.height - 36) / ph) * 1.25;
+    let ox = canvas.x + (canvas.width-pw*k)/2, oy = canvas.y + (canvas.height-ph*k)/2;
+    const bb = { x:selected.x, y:selected.y, w:selected.w, h:renderedImage.h };
+    const handle = worldPoint(bb, selected.rotation || 0, bb.w/2, -32/k);
+    const center = [bb.x+bb.w/2,bb.y+bb.h/2], vx = handle[0]-center[0], vy = handle[1]-center[1];
+    await page.mouse.move(ox+handle[0]*k,oy+handle[1]*k); await page.mouse.down();
+    await page.mouse.move(ox+(center[0]-vy)*k,oy+(center[1]+vx)*k,{steps:8}); await page.mouse.up();
+    await page.waitForTimeout(180);
+    const rotated = await page.evaluate(() => JSON.parse(localStorage.getItem('pluma-a1')).elements.find(e => e.id === 2));
+    assert.ok(Math.abs(normalizeAngle(rotated.rotation-(selected.rotation||0)-90)) < .1);
+    assert.deepEqual([rotated.x,rotated.y,rotated.w],[selected.x,selected.y,selected.w]);
+    await page.locator('#centerView').click();
+    await page.locator('#resetOriginalImage').click();
+    await page.waitForFunction(() => document.querySelector('#busy').hidden && !document.querySelector('#send').disabled);
+    const reset = await page.evaluate(() => JSON.parse(localStorage.getItem('pluma-a1')).elements.find(e => e.id === 2));
+    assert.deepEqual([reset.x,reset.y,reset.w,reset.rotation],[reset.original.x,reset.original.y,reset.original.w,0]);
+    assert.equal(reset.opts.crop,undefined); assert.equal(reset.opts.contrast,0); assert.equal(reset.opts.detail,55);
+    assert.ok(!await page.locator('#extendedHint').isVisible());
+    // Drag an independent margin, retain it on reload, then restore uniform guides.
+    await page.locator('#editMargins').click(); await page.locator('#cv').scrollIntoViewIfNeeded();
+    canvas = await page.locator('#cv').boundingBox();
+    k = Math.min((canvas.width-48)/pw,(canvas.height-36)/ph);
+    ox = canvas.x+(canvas.width-pw*k)/2; oy = canvas.y+(canvas.height-ph*k)/2;
+    await page.mouse.move(ox+12*k,oy+ph/2*k); await page.mouse.down();
+    await page.mouse.move(ox+20*k,oy+ph/2*k,{steps:6}); await page.mouse.up();
+    await page.waitForFunction(() => !document.querySelector('#editMargins').disabled && document.querySelector('#busy').hidden);
+    assert.ok(Math.abs(savedMargins.at(-1).left-20) < .2);
+    assert.equal(savedMargins.at(-1).right,12);
+    await page.reload(); await page.waitForFunction(() => !document.querySelector('#send').disabled);
+    await page.locator('#editMargins').click();
+    assert.ok(Math.abs(+await page.locator('#marginLeft').inputValue()-20) < .2);
+    // Saving unrelated settings must retain the four independent guides.
+    await page.locator('#openSettings').click();
+    await page.locator('#saveSettings').click();
+    await page.waitForFunction(() => !document.querySelector('#settingsDlg').open && document.querySelector('#busy').hidden);
+    assert.ok(Math.abs(editorPaper.margins.left-20) < .2);
+    await page.screenshot({ path: path.join(root, 'tests/artifacts/margenes-' + name + '.png'), fullPage: name === 'movil' });
+    await page.locator('#resetMargins').click();
+    await page.waitForFunction(() => document.querySelector('#busy').hidden && !document.querySelector('#editMargins').disabled);
+    assert.equal(savedMargins.at(-1),null);
+    await page.locator('#editMargins').click();
+    await page.locator('[data-photo-mode]').click();
+    await page.waitForFunction(() => document.querySelector('#busy').hidden && !document.querySelector('#send').disabled);
     await page.screenshot({ path: path.join(root, 'tests/artifacts/foto-lineas-' + name + '.png'), fullPage: name === 'movil' });
     const designBefore = await page.evaluate(() => JSON.parse(localStorage.getItem('pluma-a1')).elements);
     await page.locator('#contactTest').click();

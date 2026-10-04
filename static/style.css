@@ -69,6 +69,25 @@ main { flex: 1; min-height: 0; display: grid; grid-template-columns: 360px minma
 .paper-info { color: var(--muted); font-size: .8125rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .workspace-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-3); }
 .workspace-actions .btn { font-size: .8125rem; }
+.canvas-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 0 var(--space-5) var(--space-3); }
+.canvas-tools .btn { font-size: .8125rem; }
+.btn[aria-pressed="true"] { color: var(--ink); background: var(--ink-soft); border-color: var(--ink); }
+.view-scale { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+.view-scale .btn { min-width: 44px; padding-inline: 8px; }
+#zoomValue { min-width: 52px; text-align: center; font-variant-numeric: tabular-nums; }
+.margin-tools { padding: 0 var(--space-5) var(--space-4); }
+.margin-tools > .hint { margin: 0 0 12px; }
+.margin-values { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px; }
+.margin-values label { font-size: .75rem; color: var(--muted); }
+.margin-values input { margin-top: 4px; }
+.field.extended .lbl output, .extended-hint { color: var(--bad); font-weight: 600; }
+.field.extended input { accent-color: var(--bad); }
+#resetOriginalImage { margin-top: 8px; }
+@media (max-width: 600px) {
+  .margin-values { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .canvas-tools { padding-inline: 16px; }
+  .view-scale { margin-left: 0; }
+}
 .motion-presets { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2); margin-block: var(--space-5); }
 .motion-advanced summary { cursor: pointer; min-height: 44px; font-weight: 600; }
 .motion-advanced[open] summary { margin-bottom: var(--space-3); }
