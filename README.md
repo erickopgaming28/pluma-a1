@@ -115,7 +115,7 @@ El aviso final confirma que se recibió la señal situada detrás de la barrera 
 
 ### Ajustar la velocidad
 
-Pulsa **Velocidad** junto a las dimensiones de la hoja. Puedes elegir **Suave** (20 mm/s), **Normal** (40 mm/s) o **Rápido** (60 mm/s), o escribir las velocidades de dibujo y viaje. En **Elevación y aceleración** ajustas esos movimientos sin cambiar las alturas de apoyo. Los límites actuales son 80 mm/s de dibujo, 200 mm/s de viaje, 30 mm/s de elevación y 3000 mm/s² de aceleración. Los perfiles son puntos de partida, sin certificación para cada soporte o instrumento.
+Pulsa **Velocidad** junto a las dimensiones de la hoja. Puedes elegir **Suave** (20 mm/s), **Normal** (40 mm/s), **Rápido** (60 mm/s) o **Mega rápido** (80 mm/s), o escribir las velocidades de dibujo y viaje. **Mega rápido** usa los máximos actuales de la app: 80 mm/s de dibujo, 200 mm/s de viaje, 30 mm/s de elevación y 3000 mm/s² de aceleración. En **Elevación y aceleración** ajustas esos movimientos sin cambiar las alturas de apoyo. El perfil se guarda para el próximo dibujo; no modifica el que esté en curso. En puntillismo acelera viajes y elevaciones, pero conserva el contacto separado de cada punto. Los perfiles son puntos de partida, sin certificación para cada soporte o instrumento.
 
 Los cambios se guardan para el **próximo dibujo**, conservando la calibración. No modifican un trabajo ya enviado ni ordenan movimientos. Si actualizas mientras está dibujando, espera a que termine antes de reiniciar la terminal y recargar la página. Elevar la velocidad no elimina las levantadas necesarias entre trazos separados ni garantiza contacto o calidad.
 

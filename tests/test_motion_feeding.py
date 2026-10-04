@@ -84,14 +84,15 @@ class MotionSettingsTests(unittest.TestCase):
         before, _ = gcode.build_gcode(paths, server.config, pen_ready=True)
         saved_pen = dict(server.config['pen'])
         with patch.object(server.direct_job, '_active', True), patch.object(server.link, 'send_gcode') as send:
-            response = self.client.post('/api/motion-settings', json={'draw_speed': 60, 'travel_speed': 180})
+            response = self.client.post('/api/motion-settings', json={'draw_speed': 80, 'travel_speed': 200, 'z_speed': 30, 'accel': 3000})
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json['next_job_only'])
         send.assert_not_called()
         for key in ('z_down', 'z_up', 'offset_x', 'offset_y', 'level_bed'):
             self.assertEqual(server.config['pen'][key], saved_pen[key])
         after, _ = gcode.build_gcode(paths, server.config, pen_ready=True)
-        self.assertIn('F3600', after); self.assertIn('F10800', after)
+        self.assertIn('F4800', after); self.assertIn('F12000', after)
+        self.assertIn('F1800', after); self.assertIn('M204 S3000', after)
         self.assertIn('F2400', before)
         self.assertNotIn('G28', after)
 

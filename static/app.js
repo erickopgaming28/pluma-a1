@@ -1286,7 +1286,7 @@ async function init() {
     if (e.submitter?.value !== 'cancel') { e.preventDefault(); saveMotion(); }
   });
   for (const button of $$('[data-motion-profile]')) button.addEventListener('click', () => {
-    const values = { gentle: [20, 60, 10, 1000], normal: [40, 150, 20, 2500], fast: [60, 180, 20, 2500] }[button.dataset.motionProfile];
+    const values = { gentle: [20, 60, 10, 1000], normal: [40, 150, 20, 2500], fast: [60, 180, 20, 2500], mega: [80, 200, 30, 3000] }[button.dataset.motionProfile];
     ['draw_speed', 'travel_speed', 'z_speed', 'accel'].forEach((key, i) => $(`[data-motion="${key}"]`).value = values[i]);
   });
   $('#printerPill').addEventListener('click', openSettings);

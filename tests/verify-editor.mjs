@@ -61,7 +61,7 @@ try {
       const url = new URL(route.request().url());
       const endpoint = url.pathname;
       let data;
-      if (endpoint === '/api/state') data = { ...fixture.state, geometry: editorGeometry(), config: { ...fixture.state.config, paper: editorPaper, pen: motionPen }, app_version: '2026.10.03.17', features: { async_images: true, motion_settings: motionSettingsSupported, extended_images: true, paper_layout: true, portrait: motionSettingsSupported, stippling: motionSettingsSupported } };
+      if (endpoint === '/api/state') data = { ...fixture.state, geometry: editorGeometry(), config: { ...fixture.state.config, paper: editorPaper, pen: motionPen }, app_version: '2026.10.03.18', features: { async_images: true, motion_settings: motionSettingsSupported, extended_images: true, paper_layout: true, portrait: motionSettingsSupported, stippling: motionSettingsSupported } };
       else if (endpoint === '/api/paper-layout') {
         const value = route.request().postDataJSON().margins;
         savedMargins.push(value); editorPaper.margins = value;
@@ -130,12 +130,16 @@ try {
     await page.locator('#openMotion').click();
     await page.locator('[data-motion-profile="fast"]').click();
     assert.equal(await page.locator('[data-motion="draw_speed"]').inputValue(), '60');
+    await page.locator('[data-motion-profile="mega"]').click();
+    for (const [key,value] of Object.entries({draw_speed:80,travel_speed:200,z_speed:30,accel:3000}))
+      assert.equal(await page.locator(`[data-motion="${key}"]`).inputValue(),String(value));
     await page.screenshot({ path: path.join(root, 'tests/artifacts/velocidad-' + name + '.png') });
     await page.locator('#saveMotion').click();
     await page.waitForFunction(() => !document.querySelector('#motionDlg').open);
     assert.equal(savedSpeeds, 1);
-    assert.ok((await page.locator('#openMotion').textContent()).includes('60 mm/s'));
+    assert.ok((await page.locator('#openMotion').textContent()).includes('80 mm/s'));
     await page.locator('#openMotion').click();
+    assert.equal(await page.locator('[data-motion="draw_speed"]').inputValue(),'80');
     await page.locator('[data-motion="draw_speed"]').fill('81');
     await page.locator('#saveMotion').click();
     assert.equal(savedSpeeds, 1);
@@ -298,7 +302,7 @@ try {
     assert.ok(canceled.includes(obsolete));
     assert.equal(conversions.at(-1).opts.mode, 'trazo');
     assert.ok(!compositions.at(-1).items.some(it => it.render_id === tasks.get(obsolete).result.render_id));
-    assert.equal(await page.locator('#appVersion').textContent(), 'Versión 2026.10.03.17');
+    assert.equal(await page.locator('#appVersion').textContent(), 'Versión 2026.10.03.18');
     await page.locator('[data-photo-mode]').click();
     await page.waitForFunction(() => !document.querySelector('#send').disabled && document.querySelector('#busy').hidden);
     assert.equal(conversions.at(-1).opts.mode, 'fotolinea');

@@ -88,7 +88,7 @@ main { flex: 1; min-height: 0; display: grid; grid-template-columns: 360px minma
   .canvas-tools { padding-inline: 16px; }
   .view-scale { margin-left: 0; }
 }
-.motion-presets { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2); margin-block: var(--space-5); }
+.motion-presets { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); margin-block: var(--space-5); }
 .motion-advanced summary { cursor: pointer; min-height: 44px; font-weight: 600; }
 .motion-advanced[open] summary { margin-bottom: var(--space-3); }
 .motion-dlg > .hint { margin-top: 0; font-size: .875rem; }

@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parent
 CONFIG_FILE = ROOT / "config.json"
 IMAGE_CACHE = ROOT / '.image-cache'
 PORT = 8765
-APP_VERSION = '2026.10.03.17'
+APP_VERSION = '2026.10.03.18'
 WORKSPACE_ID = str(uuid.uuid5(uuid.NAMESPACE_URL, str(ROOT).casefold()))
 
 DEFAULT_CONFIG = {
