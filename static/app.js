@@ -193,6 +193,7 @@ async function compose() {
 
 const fmtTime = s => s < 90 ? `${Math.round(s)} s` : s < 5400 ? `${Math.round(s / 60)} min` : `${(s / 3600).toFixed(1)} h`;
 function paintStats() {
+  if (R.geo?.paper) $('#paperInfo').textContent = R.geo.paper.map(v => Number(v.toFixed(1))).join(' × ') + ' mm';
   const page = R.job && R.job.pages[0];
   const has = !!(page && page.layers.length);
   const st = has && page.stats;
@@ -269,8 +270,9 @@ function paintColors() {
 
 function syncPanel() {
   const el = sel();
+  $('#elementCount').textContent = S.elements.length;
   $('#elList').innerHTML = S.elements.map(e => `
-    <button type="button" class="chip ${e.id === S.sel ? 'on' : ''}" data-id="${e.id}"><span>${e.type === 'image' ? '▧' : 'T'} ${esc(label(e))}</span></button>`).join('');
+    <button type="button" class="chip ${e.id === S.sel ? 'on' : ''}" data-id="${e.id}" aria-pressed="${e.id === S.sel}"><svg class="element-icon" viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${e.type === 'image' ? '<rect x="2.5" y="3" width="15" height="14" rx="2"/><path d="m3 14 4-4 4 4 3-3 3 3"/>' : '<path d="M4 5V3h12v2M10 3v14M7 17h6"/>'}</svg><span>${esc(label(e))}</span></button>`).join('');
   $('#tab-text').hidden = !el || el.type !== 'text';
   $('#tab-image').hidden = !el || el.type !== 'image';
   $('#tab-colors').hidden = !el;
@@ -914,7 +916,7 @@ async function init() {
   ta.addEventListener('input', () => {
     const el = sel(); if (!el || el.type !== 'text') return;
     el.text = ta.value; touch(el);
-    const chip = $(`#elList [data-id="${el.id}"] span`); if (chip) chip.textContent = 'T ' + label(el);
+    const chip = $(`#elList [data-id="${el.id}"] span`); if (chip) chip.textContent = label(el);
   });
 
   $('#addText').addEventListener('click', () => { const el = addText(); select(el.id); touch(el, true); ta.focus(); ta.select(); });

@@ -99,6 +99,34 @@ try {
     ] })); });
     await page.goto('http://pluma-offline.test/');
     await page.waitForFunction(() => !document.querySelector('#send').disabled);
+    assert.equal(await page.locator('#elementCount').textContent(), '2');
+    assert.equal(await page.locator('#paperInfo').textContent(), fixture.state.geometry.paper.join(' × ') + ' mm');
+    assert.ok(!await page.locator('#rotationAngle').isVisible());
+    await page.locator('.preparation summary').click();
+    assert.ok(!await page.locator('#contactTest').isVisible());
+    await page.locator('.preparation summary').click();
+    assert.ok(await page.locator('#contactTest').isVisible());
+    if (name === 'movil') await page.evaluate(() => window.scrollTo(0, 0));
+    await page.screenshot({ path: path.join(root, 'tests/artifacts/diseno-' + name + '.png') });
+    if (name === 'escritorio') {
+      // Intermediate widths, small phones and dark theme keep the canvas usable.
+      for (const [variant, size, theme] of [
+        ['tablet', { width: 1024, height: 768 }, 'light'],
+        ['oscuro', { width: 1440, height: 900 }, 'dark'],
+        ['movil-pequeno', { width: 360, height: 780 }, 'light']
+      ]) {
+        await page.setViewportSize(size); await page.emulateMedia({ colorScheme: theme });
+        await page.waitForTimeout(100);
+        assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+        const canvas = await page.locator('#cv').boundingBox();
+        assert.ok(canvas.width > 250 && canvas.height > 300);
+        await page.screenshot({ path: path.join(root, 'tests/artifacts/diseno-' + variant + '.png') });
+      }
+      await page.setViewportSize(viewport); await page.emulateMedia({ colorScheme: 'light' });
+      await page.evaluate(() => window.scrollTo(0, 0));
+    }
+    await page.locator('#rotationControls summary').click();
+    assert.ok(await page.locator('#rotationAngle').isVisible());
     await page.locator('#rotateRight').click();
     assert.equal(await page.locator('#rotationAngle').inputValue(), '90');
     await page.waitForTimeout(220);
@@ -131,6 +159,7 @@ try {
       assert.ok(Math.abs(resized.x + resized.w / 2 - 80) < 0.01);
       await page.reload();
       await page.waitForFunction(() => !document.querySelector('#send').disabled);
+      await page.locator('#rotationControls summary').click();
       assert.equal(await page.locator('#rotationAngle').inputValue(), '37');
       await page.screenshot({ path: path.join(root, 'tests/artifacts/rotacion-escritorio.png') });
     } else {

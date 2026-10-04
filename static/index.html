@@ -8,7 +8,7 @@
 <meta name="theme-color" content="#2743b8">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=20261003-design">
 </head>
 <body>
 <header class="top">
@@ -27,16 +27,18 @@
     <h1 class="editor-title">Tu hoja, a mano</h1>
     <p class="editor-intro">Combina letras y bocetos. La vista previa muestra los trazos que recorrerá la pluma.</p>
     <div class="els">
+      <div class="section-heading"><h2>Elementos</h2><span id="elementCount" class="count"></span></div>
       <div class="els-add">
-        <button id="addText" class="btn" type="button">+ Texto</button>
-        <button id="addImage" class="btn" type="button">+ Imagen</button>
+        <button id="addText" class="btn" type="button"><svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="M4 5V3h12v2M10 3v14M7 17h6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>Texto</button>
+        <button id="addImage" class="btn" type="button"><svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><rect x="2.5" y="3" width="15" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="m3 14 4-4 4 4 3-3 3 3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="13" cy="7" r="1.5" fill="currentColor"/></svg>Imagen</button>
       </div>
       <div id="elList" class="chips"></div>
       <p class="hint">Arrastra cada elemento en la hoja para acomodarlo. Estira desde la esquina azul para cambiar su tamaño.</p>
     </div>
     <p id="noSel" class="hint" hidden>Toca un elemento en la hoja para editarlo, o añade uno nuevo.</p>
 
-    <section id="rotationControls" class="rotation-controls" hidden aria-label="Rotación del elemento">
+    <details id="rotationControls" class="rotation-controls" hidden aria-label="Posición, tamaño y rotación del elemento">
+      <summary>Posición, tamaño y rotación<svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="m6 8 4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
       <div class="geometry-grid">
         <label class="field"><span class="lbl">X en la hoja (mm)</span><input id="elementX" type="number" step="0.5"></label>
         <label class="field"><span class="lbl">Y en la hoja (mm)</span><input id="elementY" type="number" step="0.5"></label>
@@ -54,12 +56,13 @@
         <button class="btn ghost" id="rotateReset" type="button">Restablecer</button>
       </div>
       <p class="hint">Gira el elemento alrededor de su centro. El dibujo se enviará con este ángulo.</p>
-    </section>
+    </details>
 
     <section id="tab-text" class="tab-body" hidden>
+      <h2 class="section-title">Texto y escritura</h2>
       <label class="field">
         <span class="lbl">Tu texto</span>
-        <textarea id="text" rows="9" spellcheck="false" placeholder="Escribe aquí lo que quieres que la pluma transcriba…"></textarea>
+        <textarea id="text" rows="5" spellcheck="false" placeholder="Escribe aquí lo que quieres que la pluma transcriba…"></textarea>
       </label>
       <div class="field">
         <span class="lbl">Tipo de letra</span>
@@ -77,6 +80,7 @@
     </section>
 
     <section id="tab-image" class="tab-body" hidden>
+      <h2 class="section-title">Imagen y trazos</h2>
       <label id="drop" class="drop">
         <input id="file" type="file" accept="image/*" hidden>
         <img id="thumb" alt="" hidden>
@@ -117,20 +121,28 @@
     </section>
   </aside>
 
-  <section class="stage">
-    <div class="workflow"><span>Crear el diseño</span><span>Ajustar hoja y pluma</span><span>Revisar y enviar</span></div>
+  <section class="stage" aria-label="Vista previa del dibujo">
+    <div class="workspace-heading">
+      <div><h2>Tu hoja</h2><p>Vista previa del recorrido de la pluma</p></div>
+      <span id="paperInfo" class="paper-info"></span>
+    </div>
     <div id="banner" class="banner" hidden></div>
     <div class="canvas-wrap"><canvas id="cv"></canvas><div id="busy" class="busy" role="status" hidden>Convirtiendo…</div></div>
-    <footer class="bar">
-      <div id="stats" class="stats">—</div>
-      <div class="bar-actions">
+    <details class="preparation" open>
+      <summary>Preparar la A1<svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="m6 8 4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
+      <div class="preparation-actions">
         <button id="guide" class="btn ghost" type="button">Ubicar hoja…</button>
         <button id="level" class="btn ghost" type="button">Nivelar cama…</button>
         <button id="adjust" class="btn" type="button">Ajustar pluma…</button>
         <button id="contactTest" class="btn ghost" type="button">Probar apoyo</button>
         <button id="movePrinter" class="btn" type="button">Mover A1…</button>
-        <button id="simulate" class="btn ghost" type="button">Simular trazo</button>
-        <button id="send" class="btn primary" type="button">Enviar a la impresora…</button>
+      </div>
+    </details>
+    <footer class="bar">
+      <div class="drawing-summary"><span class="summary-label">Tu dibujo</span><div id="stats" class="stats" aria-live="polite">—</div></div>
+      <div class="bar-actions">
+        <button id="simulate" class="btn ghost" type="button"><svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="m6 3 11 7-11 7z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>Simular trazo</button>
+        <button id="send" class="btn primary" type="button">Enviar a la impresora…<svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="M3 10h14m-5-5 5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       </div>
     </footer>
   </section>
@@ -366,6 +378,6 @@
 
 <div id="toast" class="toast" role="status" popover="manual"></div>
 <!-- type=module: las variables del programa no chocan con las que inyectan las extensiones del navegador -->
-<script type="module" src="app.js"></script>
+<script type="module" src="app.js?v=20261003-design"></script>
 </body>
 </html>
