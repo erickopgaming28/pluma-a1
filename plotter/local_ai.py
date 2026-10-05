@@ -69,7 +69,7 @@ def models(provider='ollama'):
                 caps = info.get('capabilities', []) if _is_local(info) else []
             if 'vision' in caps:
                 found.append(name)
-        order = ['qwen3-vl:8b', 'qwen2.5vl:7b', 'qwen3.5:9b', 'moondream:latest']
+        order = ['qwen3-vl:8b-instruct', 'qwen2.5vl:7b', 'qwen3.5:9b', 'moondream:latest']
         found.sort(key=lambda name: order.index(name) if name in order else len(order))
         return {'available': bool(found), 'models': found,
                 'message': 'Modelos con visión listos.' if found else 'Ollama está abierto, pero falta un modelo local con visión.'}

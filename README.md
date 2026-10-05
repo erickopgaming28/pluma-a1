@@ -34,14 +34,16 @@ Ollama debe responder en `127.0.0.1:11434`; LM Studio / Bionic debe tener su ser
 
 En Windows, **Iniciar Pluma A1.bat** también abre los servidores de Ollama y LM Studio / Bionic si están instalados. **Iniciar IA local.bat** permite abrirlos mientras el editor ya está funcionando. Se reutilizan los servidores activos y se inicia la API únicamente en este equipo; los modelos se cargan cuando analizas una imagen.
 
-Para una RTX 3060 de 12 GB, se recomienda [Qwen3-VL 8B](https://ollama.com/library/qwen3-vl:8b), con cuantización Q4_K_M (unos 6.1 GB). Instálalo una vez en cada aplicación; los archivos del modelo se guardan en sus bibliotecas locales, fuera de Git:
+Para una RTX 3060 de 12 GB, se recomienda [Qwen3-VL 8B Instruct](https://ollama.com/library/qwen3-vl:8b-instruct), con cuantización Q4_K_M (unos 6.1 GB). Instálalo una vez en cada aplicación; los archivos del modelo se guardan en sus bibliotecas locales, fuera de Git:
 
 ```powershell
-ollama pull qwen3-vl:8b
+ollama pull qwen3-vl:8b-instruct
 lms get "https://huggingface.co/lmstudio-community/Qwen3-VL-8B-Instruct-GGUF@q4_k_m" --gguf --yes
 ```
 
 La descarga de LM Studio incluye el componente de visión. En Bionic aparece en **Settings → Local Models → Library**. Si no salen modelos, abre **Iniciar IA local.bat** y pulsa **Buscar modelos** de nuevo. Si ambos proveedores tienen modelos cargados, usa uno a la vez para dejar memoria de la GPU disponible.
+
+Usa la variante **Instruct** en Ollama: la etiqueta general `qwen3-vl:8b` puede devolver respuestas vacías al pedir ajustes JSON, incluso al desactivar el razonamiento.
 
 La IA reconoce la imagen y recomienda el acabado, detalle, limpieza, sombreado, brillo y contraste. La conversión en recorridos se realiza con el motor de trazos de Pluma A1, que añade la opción **Simplificar textura del papel y la piel**. Esto no es generación de imágenes por difusión: no reconstruye caras ni produce una foto nueva. Los límites de los ajustes se validan, y las respuestas inválidas no cambian el dibujo. Puedes cancelar incluso durante la carga del modelo.
 
