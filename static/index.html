@@ -8,7 +8,7 @@
 <meta name="theme-color" content="#2743b8">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
-<link rel="stylesheet" href="style.css?v=20261004-ia-local">
+<link rel="stylesheet" href="style.css?v=20261004-distribucion">
 </head>
 <body>
 <header class="top">
@@ -42,6 +42,21 @@
         <button id="addText" class="btn" type="button"><svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="M4 5V3h12v2M10 3v14M7 17h6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>Texto</button>
         <button id="addImage" class="btn" type="button"><svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><rect x="2.5" y="3" width="15" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="m3 14 4-4 4 4 3-3 3 3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="13" cy="7" r="1.5" fill="currentColor"/></svg>Imagen</button>
       </div>
+      <button id="addPlan" class="btn wide import-plan" type="button" aria-expanded="false" aria-controls="planImporter"><svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="M3 3h14v14H3zM6 13V7h3v3h5v3M10 3v3M3 10h3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>Importar plano / STL</button>
+      <div id="planImporter" class="plan-importer" hidden>
+        <p class="hint">SVG, DXF, STL, KiCad y PDF. También puedes soltar estos archivos sobre la hoja.</p>
+        <label class="field"><span class="lbl">Archivo del plano</span><input id="planFile" type="file" accept=".svg,.dxf,.stl,.kicad_sch,.sch,.pdf,image/*"></label>
+        <div id="planUnits" class="import-options">
+          <label><span id="planScaleLabel">Ajuste de tamaño</span><select id="planScale"><option value="1">Tamaño leído del archivo (×1)</option><option value="10">Multiplicar por 10</option><option value="25.4">Multiplicar por 25.4</option></select></label>
+          <label id="planProjectionField" hidden>Vista del STL<select id="planProjection"><option value="xy">Superior (XY)</option><option value="xz">Frontal (XZ)</option><option value="yz">Lateral (YZ)</option></select></label>
+          <label id="planEdgesField" hidden>Líneas del STL<select id="planEdges"><option value="outline">Contorno proyectado</option><option value="features">Contorno y aristas</option></select></label>
+        </div>
+        <label id="planPageField" class="field" hidden><span class="lbl">Página del PDF</span><input id="planPage" type="number" min="1" max="200" step="1" value="1"></label>
+        <label class="field"><span class="lbl">Al colocar en la hoja</span><select id="planPlacement"><option value="native">Conservar tamaño de origen</option><option value="fit">Hacer que quepa en los márgenes</option></select></label>
+        <p id="planImportHint" class="hint">Se conservan los trazos vectoriales. Los STL se proyectan en 2D; revisa el tamaño antes de dibujar.</p>
+        <button id="importPlan" class="btn wide" type="button" disabled>Importar archivo</button>
+        <p id="planImportStatus" class="hint" role="status"></p>
+      </div>
       <div id="elList" class="chips"></div>
       <p class="hint">Arrastra libremente para acomodar cada elemento. Estira desde la esquina azul y gira desde el círculo superior. Sólo podrás enviarlo cuando todos los trazos estén dentro del alcance de la pluma.</p>
     </div>
@@ -55,7 +70,7 @@
         <label class="field"><span class="lbl">Ancho (mm)</span><input id="elementW" type="number" min="15" max="400" step="0.5"></label>
         <label class="field"><span class="lbl">Alto (mm)</span><input id="elementH" type="number" min="1" step="0.5" aria-describedby="sizeHint"></label>
       </div>
-      <p id="sizeHint" class="hint">Las imágenes conservan su proporción; el alto del texto depende de su contenido.</p>
+      <p id="sizeHint" class="hint">Las imágenes y planos conservan su proporción; el alto del texto depende de su contenido.</p>
       <label class="field" for="rotationAngle"><span class="lbl">Rotación del elemento (°)</span>
         <input id="rotationAngle" type="number" min="-180" max="180" step="1" value="0">
       </label>
@@ -70,6 +85,12 @@
       <p class="hint">Gira el elemento alrededor de su centro. El dibujo se enviará con este ángulo.</p>
     </details>
 
+    <section id="tab-vector" class="tab-body" hidden>
+      <h2 class="section-title">Plano y trazos</h2>
+      <p id="vectorSource" class="hint"></p>
+      <p id="vectorWarnings" class="hint"></p>
+      <p class="hint">Las líneas conservan su geometría. Usa «Posición, tamaño y rotación» para cambiar la escala, y «Regla» para comprobar distancias.</p>
+    </section>
     <section id="tab-text" class="tab-body" hidden>
       <h2 class="section-title">Texto y escritura</h2>
       <label class="field">
@@ -155,33 +176,8 @@
         <button id="delEl" class="btn ghost" type="button">Eliminar</button>
       </div>
     </section>
-  </aside>
-
-  <section class="stage" aria-label="Vista previa del dibujo">
-    <div class="workspace-heading">
-      <div><h2>Tu hoja</h2><p>Vista previa del recorrido de la pluma</p></div>
-      <div class="workspace-actions"><span id="paperInfo" class="paper-info"></span><button id="openMotion" class="btn ghost" type="button" hidden>Velocidad</button></div>
-    </div>
-    <div class="canvas-tools" role="group" aria-label="Herramientas de la hoja">
-      <button id="panView" class="btn ghost" type="button" aria-pressed="false">Mover vista</button>
-      <button id="editMargins" class="btn ghost" type="button" aria-pressed="false">Editar márgenes</button>
-      <div class="view-scale"><button id="zoomOut" class="btn ghost" type="button" aria-label="Alejar vista">−</button><output id="zoomValue">100 %</output><button id="zoomIn" class="btn ghost" type="button" aria-label="Acercar vista">+</button></div>
-      <button id="centerView" class="btn ghost" type="button">Centrar hoja</button>
-    </div>
-    <div id="marginTools" class="margin-tools" hidden>
-      <p class="hint">Arrastra el centro de cada borde azul o escribe la distancia. Los márgenes son guías; la zona sombreada indica el alcance físico.</p>
-      <div class="margin-values">
-        <label>Izquierdo (mm)<input id="marginLeft" data-margin="left" type="number" min="0" max="100" step="0.5"></label>
-        <label>Superior (mm)<input id="marginTop" data-margin="top" type="number" min="0" max="100" step="0.5"></label>
-        <label>Derecho (mm)<input id="marginRight" data-margin="right" type="number" min="0" max="100" step="0.5"></label>
-        <label>Inferior (mm)<input id="marginBottom" data-margin="bottom" type="number" min="0" max="100" step="0.5"></label>
-      </div>
-      <button id="resetMargins" class="btn ghost" type="button">Restablecer márgenes</button>
-    </div>
-    <p id="updateNotice" class="update-notice" role="status" hidden></p>
-    <div id="banner" class="banner" hidden></div>
-    <div class="canvas-wrap"><canvas id="cv" tabindex="0" aria-label="Hoja de trabajo: arrastra para mover; usa las flechas para desplazar el elemento seleccionado"></canvas><div id="emptyDesign" class="empty-design" hidden><strong>Una hoja para tu próxima idea</strong><span>Añade texto o una imagen desde el panel. También puedes arrastrar una imagen sobre la hoja.</span></div><div id="busy" class="busy" role="status" hidden>Convirtiendo…</div></div>
-    <details class="preparation" open>
+    <div class="workshop-help">
+    <details class="preparation">
       <summary>Preparar la A1<svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="m6 8 4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
       <div class="preparation-actions">
         <button id="guide" class="btn ghost" type="button">Ubicar hoja…</button>
@@ -196,6 +192,65 @@
       <ol><li><b>Crea y acomoda.</b> Elige un estilo, recorta y gira. La zona rayada queda fuera del alcance.</li><li><b>Prepara la hoja y la punta.</b> Usa «Ubicar hoja», «Ajustar pluma» y «Probar apoyo». Retira o levanta la punta antes de referenciar los ejes; sigue las indicaciones de cada botón.</li><li><b>Revisa y envía.</b> Simula el trazo, elige la velocidad y revisa las opciones de envío. Al terminar, revisa que la punta marcó todas las zonas del papel.</li></ol>
       <p>Deshacer y rehacer cambian tu diseño, no el trabajo que ya enviaste. Los colores de la imagen se dibujan cambiando las plumas a mano.</p>
     </details>
+    </div>
+  </aside>
+
+  <section class="stage" aria-label="Vista previa del dibujo">
+    <div class="workspace-heading">
+      <div><h2>Tu hoja</h2><p>Vista previa del recorrido de la pluma</p></div>
+      <div class="workspace-actions"><span id="paperInfo" class="paper-info"></span><button id="openMotion" class="btn ghost" type="button" hidden>Velocidad</button></div>
+    </div>
+    <div class="canvas-tools" role="group" aria-label="Herramientas de la hoja">
+      <button id="measureTool" class="btn ghost" type="button" aria-pressed="false"><svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="M2 6h16v8H2zM5 6v4M8 6v2M11 6v4M14 6v2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>Regla</button>
+      <button id="panView" class="btn ghost" type="button" aria-pressed="false">Mover vista</button>
+      <button id="editMargins" class="btn ghost" type="button" aria-pressed="false">Editar márgenes</button>
+      <button id="showMeasurements" class="btn ghost" type="button" aria-pressed="false" aria-controls="savedMeasurements">Medidas <span id="measureToolbarCount" class="count">0</span></button>
+      <div class="view-scale"><button id="zoomOut" class="btn ghost" type="button" aria-label="Alejar vista">−</button><output id="zoomValue">100 %</output><button id="zoomIn" class="btn ghost" type="button" aria-label="Acercar vista">+</button></div>
+      <button id="centerView" class="btn ghost" type="button">Centrar hoja</button>
+    </div>
+    <p id="updateNotice" class="update-notice" role="status" hidden></p>
+    <div id="banner" class="banner" hidden></div>
+    <div class="workspace-body">
+      <div class="sheet-area">
+    <div class="canvas-wrap"><canvas id="cv" tabindex="0" aria-label="Hoja de trabajo: arrastra para mover; usa las flechas para desplazar el elemento seleccionado"></canvas><div id="busy" class="busy" role="status" hidden>Convirtiendo…</div></div>
+<div id="emptyDesign" class="empty-design" hidden><strong>Una hoja para tu próxima idea</strong><span>Añade texto, una imagen o un plano desde el panel.</span></div>
+      </div>
+      <aside id="measurementInspector" class="measurement-inspector" aria-labelledby="inspectorTitle" hidden>
+      <div class="inspector-heading"><div><h2 id="inspectorTitle">Regla</h2><p id="inspectorHint">Mide sobre la hoja sin perderla de vista.</p></div><button id="closeInspector" class="btn ghost" type="button" aria-label="Cerrar herramientas de la hoja"><svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="m5 5 10 10M15 5 5 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button></div>
+    <div id="marginTools" class="margin-tools" hidden>
+      <p class="hint">Arrastra el centro de cada borde azul o escribe la distancia. Los márgenes son guías; la zona sombreada indica el alcance físico.</p>
+      <div class="margin-values">
+        <label>Izquierdo (mm)<input id="marginLeft" data-margin="left" type="number" min="0" max="100" step="0.5"></label>
+        <label>Superior (mm)<input id="marginTop" data-margin="top" type="number" min="0" max="100" step="0.5"></label>
+        <label>Derecho (mm)<input id="marginRight" data-margin="right" type="number" min="0" max="100" step="0.5"></label>
+        <label>Inferior (mm)<input id="marginBottom" data-margin="bottom" type="number" min="0" max="100" step="0.5"></label>
+      </div>
+      <button id="resetMargins" class="btn ghost" type="button">Restablecer márgenes</button>
+    </div>
+    <div id="measurementTools" class="measurement-tools" hidden>
+      <div class="measure-options">
+        <label>Cómo medir<select id="measureMode"><option value="free">Entre puntos</option><option value="horizontal">Horizontal</option><option value="vertical">Vertical</option></select></label>
+        <label>Unidad<select id="measureUnit"><option value="mm">Milímetros</option><option value="cm">Centímetros</option><option value="in">Pulgadas</option></select></label>
+        <label class="check"><input id="measureSnap" type="checkbox" checked>Ajustar a bordes y trazos</label>
+        <button id="cancelMeasure" class="btn ghost" type="button">Nueva medida</button>
+      </div>
+      <div class="measure-readout"><output id="measureResult">Elige el primer punto</output><span id="measureDetails">Toca dos puntos sobre la hoja.</span></div>
+      <p id="measureSnapHint" class="hint">Ajuste a bordes y trazos activado. Alt permite elegir libremente.</p>
+      <div class="measure-shortcuts"><button id="measureWidth" class="btn ghost" type="button">Medir ancho del elemento</button><button id="measureHeight" class="btn ghost" type="button">Medir alto del elemento</button></div>
+      <details class="measure-advanced"><summary>Coordenadas y ajuste de escala</summary>
+        <form id="measureCoordinates">
+          <div class="measure-coordinates"><label>Punto A · X (mm)<input id="measureAX" type="number" step="any" value="0" required></label><label>Punto A · Y (mm)<input id="measureAY" type="number" step="any" value="0" required></label><label>Punto B · X (mm)<input id="measureBX" type="number" step="any" value="30" required></label><label>Punto B · Y (mm)<input id="measureBY" type="number" step="any" value="40" required></label></div>
+          <button class="btn ghost" type="submit">Añadir medida por coordenadas</button>
+        </form>
+        <p class="hint">Para ajustar una imagen o un plano, mide entre dos puntos del elemento seleccionado y escribe su distancia real.</p>
+        <div class="measure-calibration"><label>Distancia real (mm)<input id="knownDistance" type="number" min="0.001" step="any" value="10"></label><button id="calibrateScale" class="btn" type="button" disabled>Ajustar escala del elemento</button></div>
+      </details>
+      <p class="hint">Son distancias del diseño, no una comprobación de la precisión física de la A1. Las guías quedan fijas sobre la hoja y no se dibujan.</p>
+      <span id="measureSaved" class="sr-only" role="status"></span>
+    </div>
+    <details id="savedMeasurements" class="saved-measurements"><summary>Medidas guardadas <span id="measureCount">0</span></summary><label class="check"><input id="measureGuides" type="checkbox" checked>Mostrar guías en la hoja</label><p id="measureEmpty" class="hint">Activa «Regla» y toca dos puntos para guardar una medida.</p><ol id="measureList"></ol><button id="clearMeasures" class="btn ghost" type="button" disabled>Borrar todas las medidas</button></details>
+      </aside>
+    </div>
     <footer class="bar">
       <div class="drawing-summary"><span class="summary-label">Tu dibujo</span><div id="stats" class="stats" aria-live="polite">—</div></div>
       <div class="bar-actions">
@@ -457,6 +512,6 @@
 
 <div id="toast" class="toast" role="status" popover="manual"></div>
 <!-- type=module: las variables del programa no chocan con las que inyectan las extensiones del navegador -->
-<script type="module" src="app.js?v=20261004-ia-local"></script>
+<script type="module" src="app.js?v=20261004-distribucion"></script>
 </body>
 </html>

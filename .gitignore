@@ -12,6 +12,7 @@
 
 # Entornos y archivos de ejecución
 .venv/
+.venv-runtime/
 venv/
 __pycache__/
 *.py[cod]
@@ -46,3 +47,6 @@ android/*.apk
 # Resultados de pruebas de navegador
 playwright-report/
 test-results/
+
+# Revisión visual local
+.impeccable/review/

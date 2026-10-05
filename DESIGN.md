@@ -14,7 +14,9 @@ Los valores se declaran como roles en `static/style.css`, con paletas claras y o
 
 ## Organización
 
-La barra de diseño agrupa nombre, historial y archivos. El panel contiene elementos y opciones de la selección. La hoja mantiene sus herramientas de vista; preparación y revisión están próximas al envío. Los estilos explican su resultado antes de seleccionarlos. Las instrucciones poco frecuentes quedan en desplegables.
+La barra de diseño agrupa nombre, historial y archivos. El panel de creación contiene elementos, opciones de la selección y los desplegables de preparación de la A1 y ayuda. La hoja conserva sus herramientas de vista, con Regla, Medidas y Editar márgenes como accesos al panel de herramientas. La revisión y el envío quedan al pie de la hoja. Los estilos explican su resultado antes de seleccionarlos.
+
+En pantallas de al menos 1280 px, la hoja ocupa el centro y el panel de herramientas se abre a su derecha; ambos paneles laterales tienen desplazamiento independiente. En pantallas más estrechas, las herramientas aparecen debajo de la hoja. La ayuda de un diseño vacío es una franja bajo el lienzo. Los controles avanzados permanecen en desplegables para conservar espacio de dibujo.
 
 Los botones miden al menos 44 px de alto. Los formularios conservan etiquetas visibles, ayuda y foco. En pantallas bajas la página se desplaza para mantener una hoja útil; en celular se presenta primero la hoja y después las opciones.
 

@@ -1,6 +1,9 @@
 import { normalizeAngle, worldPoint, localPoint, rotatedBounds } from './element-geometry.mjs';
 import { createCropEditor } from './crop-editor.mjs';
 import { DesignHistory, designKey, validateDesignFile, fitPlacement } from './design-tools.mjs';
+import { createMeasurementEditor } from './measure-editor.mjs';
+import { validateMeasurements } from './measure-tools.mjs';
+import { validateVector } from './vector-data.mjs';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -27,13 +30,14 @@ const SLIDERS = {
   ],
 };
 const DEFAULTS = {
+  vector: {},
   text: { font: 'EMSAllure', size: 9, line_spacing: 1.15, letter_spacing: 0, slant: 0, human: 55, align: 'left', join: true, seed: 1 },
   image: { mode: 'trazo', detail: 55, threshold: 160, photo_cleaning: 65, shade: 50, hatch_spacing: 1.2, dot_spacing: .7, hatch_angle: 45, brightness: 0, contrast: 0, cross: true, invert: false, seed: 1, portrait_style: 'suave' },
 };
 const SAMPLE = 'Querida Sofía:\n\nTe escribo esta carta sin tocar la pluma: la sostiene mi impresora 3D. ¿Verdad que parece letra de verdad?\n\nUn abrazo,\nErick';
 
 // Lo que se guarda: los elementos colocados en la hoja (x, y, w en mm desde la esquina superior izquierda).
-const S = { name: 'Mi diseño', elements: null, sel: null, nextId: 1 };
+const S = { name: 'Mi diseño', elements: null, measurements:[], sel: null, nextId: 1 };
 // Estado de la sesión: conversiones, vista, trabajo compuesto, impresora.
 const R = { cfg: null, geo: null, rend: {}, seq: {}, thumbs: {}, view: null, job: null, over: null, dirty: false,
             anim: null, sent: null, status: {}, penReady: false, fileTarget: 'sel', tasks: {}, asyncImages: false,
@@ -113,6 +117,7 @@ try {
   if (saved && Array.isArray(saved.elements)) Object.assign(S, saved);
   else legacy = saved;  // versión anterior: un solo texto que ocupaba toda la hoja
 } catch {}
+try { S.measurements = validateMeasurements(S.measurements); } catch { S.measurements = []; }
 const history = new DesignHistory();
 let historyReady = false, historyTimer, fileBusy = false;
 const persist = () => {
@@ -140,6 +145,8 @@ function restoreDesign(state) {
     if (R.tasks[el.id]) api(`/api/element/tasks/${R.tasks[el.id]}/cancel`, {}).catch(() => {});
   }
   Object.assign(S, state);
+  S.measurements = validateMeasurements(state.measurements);
+  measurement.restored();
   S.nextId = Math.max(S.nextId, ...S.elements.map(e => e.id + 1), 1);
   S.elements.forEach(el => {
     el.opts = { ...DEFAULTS[el.type], ...el.opts };
@@ -266,10 +273,80 @@ function addImage(imageId) {
   return el;
 }
 
+function addVector(data) {
+  const vector = validateVector(data.vector), [x0,y0,x1,y1] = R.geo.drawable;
+  const w = data.w, h = w * vector.aspect;
+  const el = {id:S.nextId++,type:'vector',vector,x:(x0+x1-w)/2,y:(y0+y1-h)/2,w,rotation:0,
+    opts:{},colorMode:'single',pen:0};
+  S.elements.push(el); return el;
+}
+const minWidth = el => el.type === 'vector' ? .1 : 15;
+const maxWidth = el => el.type === 'vector' ? Math.min(400,2000/el.vector.aspect) : 400;
+
+let pendingPlan = null, importingPlan = false;
+const isPlanFile = file => !!file && /\.(svg|dxf|stl|kicad_sch|sch|pdf)$/i.test(file.name);
+function preparePlanFile(file) {
+  if (!file || importingPlan) return;
+  pendingPlan=file;
+  $('#planImporter').hidden=false;$('#addPlan').setAttribute('aria-expanded','true');
+  const pdf=/\.pdf$/i.test(file.name),stl=/\.stl$/i.test(file.name),raster=!isPlanFile(file);
+  $('#planUnits').hidden=pdf || raster;
+  $('#planScaleLabel').textContent=stl ? 'Unidad del STL' : 'Ajuste de tamaño';
+  const scales=stl ? ['1 unidad = 1 mm','1 unidad = 1 cm','1 unidad = 1 pulgada'] : ['Tamaño leído del archivo (×1)','Multiplicar por 10','Multiplicar por 25.4'];
+  [...$('#planScale').options].forEach((option,i)=>{option.textContent=scales[i];});
+  $('#planProjectionField').hidden=$('#planEdgesField').hidden=!stl;
+  $('#planPageField').hidden=!pdf;
+  $('#planPlacement').closest('label').hidden=raster;
+  $('#planImportHint').textContent=pdf ? 'Se importa la página como imagen a su tamaño de origen. Comprueba la escala con una medida conocida.'
+    : stl ? 'El STL se proyecta en 2D. Elige vista y unidad del modelo; las aristas pueden incluir líneas ocultas.'
+    : raster ? 'La imagen se convierte en trazos. Ajusta su escala con la regla si necesitas medidas reales.'
+    : 'Deja ×1 para conservar la escala leída del archivo. El factor multiplica ese tamaño; DXF sin unidades se interpreta en mm. Los elementos no compatibles se indican al importar.';
+  $('#planImportStatus').textContent=file.name;$('#importPlan').disabled=false;
+}
+async function importPlan() {
+  if (!pendingPlan || importingPlan) return;
+  const file=pendingPlan,pdf=/\.pdf$/i.test(file.name),vector=isPlanFile(file) && !pdf;
+  if ((pdf && !R.pdfImport) || (vector && !R.vectorImport)) {toast('Reinicia la terminal de Pluma A1 cuando termine el dibujo para activar esta importación.',true);return;}
+  if (!isPlanFile(file)) {await loadImage(file,'new');return;}
+  if (file.size > 20*1024*1024) {toast('Elige un archivo de hasta 20 MB.',true);return;}
+  importingPlan=true;$('#importPlan').disabled=true;$('#planFile').disabled=true;
+  $('#planImportStatus').textContent='Importando y preparando el archivo…';
+  try {
+    const fd=new FormData();fd.append('file',file);
+    if (pdf) {
+      const page=$('#planPage').valueAsNumber;
+      if (!Number.isInteger(page) || page < 1) throw new Error('Escribe un número de página válido.');
+      fd.append('page',page);
+    } else {fd.append('projection',$('#planProjection').value);fd.append('scale',$('#planScale').value);fd.append('edge_mode',$('#planEdges').value);}
+    const data=await api(pdf ? '/api/pdf/upload' : '/api/import-vector',fd,true);
+    const [x0,y0,x1,y1]=R.geo.drawable,aspect=pdf ? data.height_mm/data.width_mm : validateVector(data.vector).aspect;
+    const native=pdf ? data.width_mm : data.w,fit=$('#planPlacement').value==='fit';
+    const w=fit ? Math.min(native,x1-x0,(y1-y0)/aspect,400) : native;
+    const min=pdf ? 15 : .1;
+    if (!Number.isFinite(w) || w < min || w > 400 || !Number.isFinite(aspect) || aspect<=0 || (!pdf && w*aspect > 2000))
+      throw new Error('El tamaño de origen excede el editor. Elige «Hacer que quepa en los márgenes» o cambia la escala de origen.');
+    flushHistory();
+    const el=pdf ? addImage(data.id) : addVector({...data,w});
+    el.w=w;el.x=(x0+x1-w)/2;el.y=(y0+y1-w*aspect)/2;
+    if (pdf) el.original={x:el.x,y:el.y,w:el.w,rotation:0,colorMode:el.colorMode,pen:el.pen};
+    select(el.id);touch(el,true);clearTimeout(timers[el.id]);await renderEl(el);syncPanel();draw();
+    const warnings=pdf ? data.warnings || [] : data.vector.warnings || [];
+    $('#planImportStatus').textContent=`${file.name}${pdf ? ` · página ${data.page} de ${data.pages}` : ''} · ${w.toFixed(2)} × ${(w*aspect).toFixed(2)} mm. ${warnings.join(' ')}`;
+    toast('Archivo importado. Usa la regla para revisar el tamaño.');
+  } catch(error) {$('#planImportStatus').textContent=error.message;toast(error.message,true);}
+  finally {importingPlan=false;$('#planFile').disabled=false;$('#importPlan').disabled=!pendingPlan;}
+}
+function bindPlanImport(features) {
+  R.vectorImport=!!features?.vector_import;R.pdfImport=!!features?.pdf_import;
+  $('#addPlan').addEventListener('click',()=>{const open=$('#planImporter').hidden;$('#planImporter').hidden=!open;$('#addPlan').setAttribute('aria-expanded',open);if(open)$('#planFile').focus();});
+  $('#planFile').addEventListener('change',event=>preparePlanFile(event.target.files[0]));
+  $('#importPlan').addEventListener('click',importPlan);
+}
+
 /** Caja del elemento en mm de hoja. El alto sale de la conversión (texto) o de la proporción (imagen). */
 function box(el) {
   const r = R.rend[el.id];
-  const h = !r ? 20 : el.type === 'image' ? r.h * el.w / r.w : r.h;
+  const h = el.type === 'vector' ? el.w * el.vector.aspect : !r ? 20 : el.type === 'image' ? r.h * el.w / r.w : r.h;
   return { x: el.x, y: el.y, w: el.w, h };
 }
 
@@ -323,9 +400,9 @@ async function convertImage(el, body, seq) {
 async function renderEl(el) {
   const seq = R.seq[el.id] = (R.seq[el.id] || 0) + 1;
   $('#busy').hidden = !++busy;
-  $('#busy').textContent = el.type === 'image' ? 'Preparando la imagen…' : 'Convirtiendo el texto…';
+  $('#busy').textContent = el.type === 'image' ? 'Preparando la imagen…' : el.type === 'vector' ? 'Preparando el plano…' : 'Convirtiendo el texto…';
   try {
-    const body = { id: el.id, type: el.type, text: el.text, image: el.imageId, opts: el.opts,
+    const body = { id: el.id, type: el.type, text: el.text, image: el.imageId, vector:el.vector, opts: el.opts,
                    w: el.w, color_mode: el.colorMode, pen: el.pen };
     const r = el.type === 'image' && R.asyncImages ? await convertImage(el, body, seq) : await api('/api/element', body);
     if (r && seq === R.seq[el.id] && S.elements.includes(el)) {
@@ -466,7 +543,7 @@ function buildFonts(fonts) {
   syncers.push(el => { if (el.type === 'text') paint(el); });
 }
 
-const label = el => el.type === 'image' ? `Imagen ${el.id}` : (el.text.replace(/\{\d\}/g, '').trim().split('\n')[0] || `Texto ${el.id}`);
+const label = el => el.type === 'image' ? `Imagen ${el.id}` : el.type === 'vector' ? el.vector.source.name || `Plano ${el.id}` : (el.text.replace(/\{\d\}/g, '').trim().split('\n')[0] || `Texto ${el.id}`);
 
 function paintColors() {
   const el = sel();
@@ -474,6 +551,7 @@ function paintColors() {
   const pens = R.cfg.pens;
   if (el.pen >= pens.length) el.pen = 0;
   const multi = el.colorMode === 'multi';
+  $('#colorMode').hidden = el.type === 'vector';
   $$('#colorMode button').forEach(b => b.classList.toggle('on', b.dataset.v === el.colorMode));
   const insert = multi && el.type === 'text';
   $('#penChips').innerHTML = pens.map((p, i) => `
@@ -490,10 +568,12 @@ function syncPanel() {
     <button type="button" class="chip ${e.id === S.sel ? 'on' : ''}" data-id="${e.id}" aria-pressed="${e.id === S.sel}"><svg class="element-icon" viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${e.type === 'image' ? '<rect x="2.5" y="3" width="15" height="14" rx="2"/><path d="m3 14 4-4 4 4 3-3 3 3"/>' : '<path d="M4 5V3h12v2M10 3v14M7 17h6"/>'}</svg><span>${esc(label(e))}</span></button>`).join('');
   $('#tab-text').hidden = !el || el.type !== 'text';
   $('#tab-image').hidden = !el || el.type !== 'image';
+  $('#tab-vector').hidden = !el || el.type !== 'vector';
   $('#tab-colors').hidden = !el;
   $('#noSel').hidden = !!el;
   $('#rotationControls').hidden = !el;
   $('#designName').value = S.name || 'Mi diseño';
+  measurement.sceneChanged();
   if (!el) return;
   $('#rotationAngle').value = $('#rotationSlider').value = angleOf(el);
   syncGeometry();
@@ -503,6 +583,11 @@ function syncPanel() {
     $('#thumb').hidden = false;
     $('#thumb').src = imagePreview(el);
     paintImageOptions(el);
+  }
+  if (el.type === 'vector') {
+    const source = el.vector.source;
+    $('#vectorSource').textContent = `${source.name || 'Plano'} · ${(source.format || '').toUpperCase()}${source.projection ? ' · vista ' + source.projection.toUpperCase() : ''} · ${el.vector.paths.length.toLocaleString('es')} trazos`;
+    $('#vectorWarnings').textContent = el.vector.warnings.join(' ');
   }
   paintColors();
 }
@@ -546,7 +631,9 @@ function syncGeometry() {
   const el = sel(); if (!el) return;
   const b = box(el);
   for (const k of ['x', 'y', 'w', 'h']) $('#element' + k.toUpperCase()).value = +b[k].toFixed(2);
-  $('#elementH').disabled = el.type !== 'image' || !R.rend[el.id] || R.rend[el.id].missing || R.rend[el.id].pending;
+  $('#elementW').min = minWidth(el);
+  $('#elementW').max = maxWidth(el);
+  $('#elementH').disabled = !['image','vector'].includes(el.type) || !R.rend[el.id] || R.rend[el.id].missing || R.rend[el.id].pending;
   const pending = !R.rend[el.id] || R.rend[el.id].missing || R.rend[el.id].pending || R.placing;
   $('#centerElement').disabled = $('#fitElement').disabled = !!pending;
 }
@@ -558,7 +645,7 @@ async function placeSelected(shrink) {
     if (shrink) for (let attempt=0; attempt<3; attempt++) {
       const target = fitPlacement(box(el), angleOf(el), R.geo.drawable);
       if (target.scale >= .999) break;
-      el.w = clamp(target.w,15,400);
+      el.w = clamp(target.w,minWidth(el),maxWidth(el));
       if (el.type === 'text') el.opts.size = Math.max(4,el.opts.size * target.scale);
       clearTimeout(timers[el.id]); await renderEl(el);
       if (!S.elements.includes(el)) return;
@@ -577,8 +664,8 @@ function setGeometry(key, value) {
   stopAnim(); R.over = null; delete resizeCenters[el.id];
   if (key === 'w' || key === 'h') {
     const b = box(el);
-    if (key === 'h' && (el.type !== 'image' || !b.h)) return;
-    el.w = clamp(key === 'w' ? value : value * b.w / b.h, 15, 400);
+    if (key === 'h' && (!['image','vector'].includes(el.type) || !b.h)) return;
+    el.w = clamp(key === 'w' ? value : value * b.w / b.h, minWidth(el), maxWidth(el));
     touch(el, true);
   } else { el[key] = value; R.dirty = true; ++composeSeq; persist(); compose(); }
   syncGeometry(); draw();
@@ -586,6 +673,22 @@ function setGeometry(key, value) {
 
 /* ---------- la hoja: dibujo, arrastre y cambio de tamaño ---------- */
 const cv = $('#cv'), ctx = cv.getContext('2d');
+const measurement = createMeasurementEditor({
+  getScene:() => ({tool:R.canvasTool,paper:R.geo?.paper,view:R.view,selected:sel(),
+    boxes:(S.elements || []).map(el => ({...box(el),id:el.id,rotation:angleOf(el),selected:el.id===S.sel})),
+    strokes:strokes().sort((a,b)=>Number(b.id===S.sel)-Number(a.id===S.sel))}),
+  getMeasurements:() => S.measurements,
+  setMeasurements:value => {S.measurements=value;persist();},beforeChange:flushHistory,
+  setTool:setCanvasTool,redraw:() => draw(),toast,
+  calibrate:async (el,factor) => {
+    const w = el.w * factor;
+    if (!Number.isFinite(w) || w < minWidth(el) || w > maxWidth(el)) {toast(`El ancho resultante debe estar entre ${minWidth(el)} y ${maxWidth(el).toFixed(2)} mm.`,true);return false;}
+    flushHistory();stopAnim();const b=box(el);el.w=w;el.x=b.x+b.w/2-w/2;el.y=b.y+b.h/2-b.h*factor/2;
+    touch(el,true);clearTimeout(timers[el.id]);syncPanel();await renderEl(el);
+    if (!S.elements.includes(el) || R.rend[el.id]?.missing) return false;
+    toast('Escala ajustada. Comprueba la nueva distancia con la regla.');return true;
+  }
+});
 const previewPaths = new WeakMap();
 const HANDLE = 7;  // medio lado del tirador, en px de pantalla
 const angleOf = el => Number.isFinite(+el.rotation) ? normalizeAngle(+el.rotation) : 0;
@@ -608,9 +711,9 @@ function strokes() {
   for (const el of S.elements) {
     const r = R.rend[el.id];
     if (!r) continue;
-    const s = el.type === 'image' ? el.w / r.w : 1;
+    const s = el.type === 'image' || el.type === 'vector' ? el.w / r.w : 1;
     const b = box(el);
-    for (const l of r.layers) out.push({ color: l.color, paths: l.paths, x: el.x, y: el.y, s, width: r.preview_width || .42,
+    for (const l of r.layers) out.push({ id:el.id,color: l.color, paths: l.paths, x: el.x, y: el.y, s, width: r.preview_width || .42,
                                        angle: angleOf(el), cx: b.w / 2, cy: b.h / 2 });
   }
   return out;
@@ -756,6 +859,7 @@ function draw(limit = Infinity) {
       ctx.fillStyle = '#fdfcf8'; ctx.beginPath(); ctx.arc(ox + rot[0] * k, oy + rot[1] * k, 8, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     }
   }
+  measurement.draw(ctx,R.view,wrap.width,wrap.height);
 }
 
 const pagePoint = e => {
@@ -779,10 +883,11 @@ function hitMargin(x, y) {
 }
 function syncMargins() { for (const input of $$('[data-margin]')) input.value = +margins()[input.dataset.margin].toFixed(2); }
 function setCanvasTool(tool) {
+  stopAnim();
   R.canvasTool = tool;
   $('#panView').setAttribute('aria-pressed', tool === 'pan'); $('#editMargins').setAttribute('aria-pressed', tool === 'margins');
-  $('#marginTools').hidden = tool !== 'margins'; syncMargins(); draw();
-  cv.style.cursor = tool === 'pan' ? 'grab' : 'default';
+  $('#marginTools').hidden = tool !== 'margins'; syncMargins(); measurement.toolChanged(); draw();
+  cv.style.cursor = tool === 'pan' ? 'grab' : tool === 'measure' ? 'crosshair' : 'default';
 }
 function zoomView(factor) {
   R.viewport.zoom = clamp(R.viewport.zoom * factor, .5, 4);
@@ -823,6 +928,7 @@ function bindCanvas() {
     }
     if (R.over) { R.over = null; compose(); }
     const [x, y] = pagePoint(e);
+    if (R.canvasTool === 'measure') {stopAnim();measurement.click([x,y],e);e.preventDefault();return;}
     const cur = sel();
     const side = R.canvasTool === 'margins' && hitMargin(x, y);
     if (side) drag = { mode: 'margin', side, before: margins() };
@@ -853,6 +959,7 @@ function bindCanvas() {
       R.viewport.x = drag.x + e.clientX - drag.clientX; R.viewport.y = drag.y + e.clientY - drag.clientY; draw(); return;
     }
     const [x, y] = pagePoint(e);
+    if (!drag && R.canvasTool === 'measure') {cv.style.cursor='crosshair';measurement.move([x,y],e);return;}
     if (!drag) {
       const cur = sel(), hit = hitElement(x, y);
       cv.style.cursor = R.canvasTool === 'pan' ? 'grab' : R.canvasTool === 'margins' && hitMargin(x, y) ? 'crosshair'
@@ -880,7 +987,7 @@ function bindCanvas() {
       $('#rotationAngle').value = $('#rotationSlider').value = +el.rotation.toFixed(1);
     } else {
       const a = angleOf(el) * Math.PI / 180;
-      el.w = clamp(2 * (Math.cos(a) * (x - drag.cx) + Math.sin(a) * (y - drag.cy)), 15, 400);
+      el.w = clamp(2 * (Math.cos(a) * (x - drag.cx) + Math.sin(a) * (y - drag.cy)), minWidth(el), maxWidth(el));
       el.x = drag.cx - el.w / 2; el.y = drag.cy - box(el).h / 2;
       if (el.type === 'text') touch(el);  // el texto se vuelve a repartir en renglones con el ancho nuevo
     }
@@ -907,7 +1014,7 @@ function bindCanvas() {
   // soltar un archivo de imagen sobre la hoja crea un elemento nuevo
   const wrap = cv.parentElement;
   wrap.addEventListener('dragover', e => e.preventDefault());
-  wrap.addEventListener('drop', e => { e.preventDefault(); loadImage(e.dataTransfer.files[0], 'new'); });
+  wrap.addEventListener('drop', e => { e.preventDefault();const file=e.dataTransfer.files[0];if (isPlanFile(file)) preparePlanFile(file);else loadImage(file,'new'); });
 }
 
 function stopAnim() { if (R.anim) cancelAnimationFrame(R.anim); R.anim = null; $('#simulate').textContent = 'Simular trazo'; }
@@ -1324,7 +1431,7 @@ async function init() {
   $('#openDesign').addEventListener('click',()=>$('#projectFile').click());
   $('#projectFile').addEventListener('change',event=>openDesignFile(event.target.files[0]));
   $('#newDesign').addEventListener('click',()=>{
-    if (fileBusy) return;flushHistory();restoreDesign({name:'Mi diseño',elements:[],sel:null,nextId:S.nextId});
+    if (fileBusy) return;flushHistory();restoreDesign({name:'Mi diseño',elements:[],measurements:[],sel:null,nextId:S.nextId});
     flushHistory();toast('Hoja vacía lista. Puedes deshacer para recuperar tu diseño.');
   });
   $('#centerElement').addEventListener('click',()=>placeSelected(false));
@@ -1339,6 +1446,8 @@ async function init() {
     const key=event.key.toLowerCase(),mod=event.ctrlKey || event.metaKey;
     if (mod && key==='s') {event.preventDefault();saveDesignFile();return;}
     if (typing || document.querySelector('dialog[open]') || fileBusy) return;
+    if (key === 'escape' && R.canvasTool === 'measure') {event.preventDefault();measurement.cancel();return;}
+    if (R.canvasTool === 'measure' && event.target === cv && (key === 'delete' || event.key.startsWith('Arrow'))) return;
     if (mod && (key==='z' || key==='y')) {event.preventDefault();travelHistory(key==='y' || event.shiftKey ? 'redo' : 'undo');return;}
     if (mod && key==='d') {event.preventDefault();$('#dupEl').click();return;}
     if (key==='delete' && sel()) {event.preventDefault();$('#delEl').click();return;}
@@ -1365,6 +1474,8 @@ async function init() {
   $('#portraitMode').addEventListener('click', () => prepareTonalImage('retrato'));
   $('#stipplingMode').addEventListener('click', () => prepareTonalImage('puntillismo'));
   bindCanvas();
+  measurement.bind();
+  bindPlanImport(st.features);
   $('#panView').addEventListener('click', () => setCanvasTool(R.canvasTool === 'pan' ? '' : 'pan'));
   $('#editMargins').addEventListener('click', () => setCanvasTool(R.canvasTool === 'margins' ? '' : 'margins'));
   $('#zoomIn').addEventListener('click', () => zoomView(1.25));

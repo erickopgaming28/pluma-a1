@@ -54,6 +54,7 @@ def models(provider='ollama'):
             found = [item['key'] for item in data.get('models', [])
                      if item.get('type') == 'llm' and item.get('capabilities', {}).get('vision') is True
                      and item.get('format') in ('gguf', 'mlx') and _is_local(item)]
+            found.sort(key=lambda name: 0 if 'qwen3-vl-8b' in name.lower() else 1)
             return {'available': bool(found), 'models': found,
                     'message': 'Modelos con visión listos.' if found else 'LM Studio no tiene un modelo local con visión disponible.'}
         tags = _request('/api/tags').get('models', [])
@@ -68,13 +69,13 @@ def models(provider='ollama'):
                 caps = info.get('capabilities', []) if _is_local(info) else []
             if 'vision' in caps:
                 found.append(name)
-        order = ['qwen2.5vl:7b', 'qwen3.5:9b', 'moondream:latest']
+        order = ['qwen3-vl:8b', 'qwen2.5vl:7b', 'qwen3.5:9b', 'moondream:latest']
         found.sort(key=lambda name: order.index(name) if name in order else len(order))
         return {'available': bool(found), 'models': found,
                 'message': 'Modelos con visión listos.' if found else 'Ollama está abierto, pero falta un modelo local con visión.'}
     except (OSError, ValueError, TypeError, KeyError):
         name = 'Ollama' if provider == 'ollama' else 'LM Studio / Bionic'
-        return {'available': False, 'models': [], 'message': f'No se pudo conectar con {name} local. Abre su servidor y pulsa Buscar modelos.'}
+        return {'available': False, 'models': [], 'message': f'No se pudo conectar con {name} local. Abre Iniciar IA local.bat y pulsa Buscar modelos.'}
 
 
 def validate_advice(data, goal='auto'):

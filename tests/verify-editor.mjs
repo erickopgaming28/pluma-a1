@@ -156,6 +156,9 @@ try {
     assert.equal(await page.locator('#elementCount').textContent(), '2');
     assert.equal(await page.locator('#paperInfo').textContent(), fixture.state.geometry.paper.join(' × ') + ' mm');
     assert.ok(!await page.locator('#rotationAngle').isVisible());
+    assert.ok(!await page.locator('#contactTest').isVisible());
+    await page.locator('.preparation summary').click();
+    assert.ok(await page.locator('#contactTest').isVisible());
     await page.locator('.preparation summary').click();
     assert.ok(!await page.locator('#contactTest').isVisible());
     await page.locator('.preparation summary').click();
@@ -427,6 +430,7 @@ try {
     await page.waitForFunction(() => document.querySelector('#busy').hidden && !document.querySelector('#send').disabled);
     await page.screenshot({ path: path.join(root, 'tests/artifacts/foto-lineas-' + name + '.png'), fullPage: name === 'movil' });
     const designBefore = await page.evaluate(() => JSON.parse(localStorage.getItem('pluma-a1')).elements);
+    if(!await page.locator('.preparation').evaluate(el=>el.open))await page.locator('.preparation summary').click();
     await page.locator('#contactTest').click();
     await page.waitForFunction(() => document.querySelector('#contactTest').textContent === 'Volver al diseño');
     assert.equal(await page.locator('#contactTest').textContent(), 'Volver al diseño');

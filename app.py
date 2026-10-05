@@ -17,13 +17,14 @@ import numpy as np
 from flask import Flask, jsonify, request, send_file
 from werkzeug.serving import ThreadedWSGIServer
 
-from plotter import fonts, gcode, handwriting, pathops, printer, sketch, stream, conversion, local_ai
+from plotter import fonts, gcode, handwriting, pathops, printer, sketch, stream, conversion, local_ai, vector_import
+from plotter.pdf_import import pdf_to_image
 
 ROOT = Path(__file__).resolve().parent
 CONFIG_FILE = ROOT / "config.json"
 IMAGE_CACHE = ROOT / '.image-cache'
 PORT = 8765
-APP_VERSION = '2026.10.04.20'
+APP_VERSION = '2026.10.04.21'
 WORKSPACE_ID = str(uuid.uuid5(uuid.NAMESPACE_URL, str(ROOT).casefold()))
 
 DEFAULT_CONFIG = {
@@ -42,7 +43,7 @@ DEFAULT_CONFIG = {
 }
 
 app = Flask(__name__, static_folder="static", static_url_path="")
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
+app.config['MAX_CONTENT_LENGTH'] = 21 * 1024 * 1024  # 20 MB file plus multipart fields
 dispatch_lock = threading.Lock()
 last_dispatch = {}
 link = printer.PrinterLink()
@@ -184,7 +185,7 @@ def api_state():
     for fid, label in fonts.CATALOG:
         font_list.append({"id": fid, "label": label, "sample": font_sample(fonts.get_font(fid))})
     return jsonify({"config": public_config(), "fonts": font_list, "geometry": geometry(),
-                    'app_version': APP_VERSION, 'features': {'async_images': True, 'motion_settings': True, 'extended_images': True, 'paper_layout': True, 'portrait': True, 'stippling': True, 'local_ai': True},
+                    'app_version': APP_VERSION, 'features': {'async_images': True, 'motion_settings': True, 'extended_images': True, 'paper_layout': True, 'portrait': True, 'stippling': True, 'local_ai': True, 'vector_import': True, 'pdf_import': True},
                     "paper_sizes": gcode.PAPER_SIZES, "lan_url": lan_url()})
 
 
@@ -296,8 +297,12 @@ def api_image_upload():
         rgb = sketch.load_image(f.read())
     except Exception:
         raise ValueError("No pude abrir ese archivo como imagen.")
+    return jsonify(_store_image(rgb, f.filename or 'imagen'))
+
+
+def _store_image(rgb, name):
     image_id = uuid.uuid4().hex[:10]
-    images[image_id] = {"rgb": rgb, "name": Path(f.filename or "imagen").stem}
+    images[image_id] = {"rgb": rgb, "name": Path(name).stem}
     # Private local cache preserves originals across a server update/restart.
     from PIL import Image
     IMAGE_CACHE.mkdir(exist_ok=True)
@@ -307,7 +312,28 @@ def api_image_upload():
     temporary.replace(target)
     while len(images) > 12:
         images.pop(next(iter(images)))
-    return jsonify({"id": image_id, "width": rgb.shape[1], "height": rgb.shape[0]})
+    return {"id": image_id, "width": rgb.shape[1], "height": rgb.shape[0]}
+
+
+@app.post('/api/pdf/upload')
+def api_pdf_upload():
+    f = request.files.get('file')
+    if not f:
+        raise ValueError('No llegó ningún PDF.')
+    result = pdf_to_image(f.read(), request.form.get('page', '1'))
+    rgb = result.pop('image')
+    result.update(_store_image(rgb, f.filename or 'pagina.pdf'))
+    return jsonify(result)
+
+
+@app.post('/api/import-vector')
+def api_import_vector():
+    f = request.files.get('file')
+    if not f:
+        raise ValueError('No llegó ningún archivo vectorial.')
+    return jsonify(vector_import.import_file(
+        f.read(), f.filename or '', projection=request.form.get('projection', 'xy'),
+        scale=request.form.get('scale', '1'), edge_mode=request.form.get('edge_mode', 'outline')))
 
 
 def get_image(image_id):
@@ -414,13 +440,24 @@ def api_element_task_cancel(task_id):
 
 
 def _convert_element(d, cfg=None, progress=None, cancelled=None):
+    if not isinstance(d, dict):
+        raise ValueError('El elemento debe ser un objeto.')
     cfg = copy.deepcopy(config) if cfg is None else cfg
     o = d.get("opts", {})
     x0, _, x1, _ = gcode.drawable(cfg)
     area_w = x1 - x0
     multi = d.get("color_mode") == "multi"
-    pen = int(d.get("pen", 0))
-    w = min(max(float(d.get("w") or area_w), 15.0), 400.0)
+    pen = 0 if d.get('type') == 'vector' else int(d.get("pen", 0))
+    if d.get('type') == 'vector':
+        w = vector_import.number(d.get('w', area_w), 'el ancho vectorial', .1, 400)
+        raw_pen = vector_import.number(d.get('pen', 0), 'la pluma vectorial', 0, len(cfg['pens']) - 1)
+        if raw_pen != int(raw_pen):
+            raise ValueError('Elige una pluma disponible para el vector.')
+        pen = int(raw_pen)
+        paths, h = vector_import.render_vector(d.get('vector'), w)
+        layers = {pen: paths}
+    else:
+        w = min(max(float(d.get("w") or area_w), 15.0), 400.0)
     if d.get("type") == "image":
         item = get_image(d.get("image"))
         if not item:
@@ -429,7 +466,7 @@ def _convert_element(d, cfg=None, progress=None, cancelled=None):
                                       progress=progress, cancelled=cancelled)
         if not multi:
             layers = {pen: v for v in layers.values()}
-    else:
+    elif d.get('type') != 'vector':
         font = fonts.get_font(o.get("font"))
         # sin límite de alto: el cuadro crece hacia abajo con el texto
         layers = handwriting.render_text(d.get("text", ""), font, o, w, 1e6,

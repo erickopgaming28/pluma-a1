@@ -3,3 +3,4 @@ numpy
 pillow
 opencv-contrib-python-headless
 paho-mqtt
+pypdfium2>=4.30

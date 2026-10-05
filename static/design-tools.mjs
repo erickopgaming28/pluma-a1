@@ -1,5 +1,7 @@
+import { validateMeasurements } from './measure-tools.mjs';
+import { validateVector } from './vector-data.mjs';
 const clone = value => JSON.parse(JSON.stringify(value));
-export const designKey = state => JSON.stringify({ name: state.name || 'Mi diseño', elements: state.elements });
+export const designKey = state => JSON.stringify({ name: state.name || 'Mi diseño', elements: state.elements, measurements:state.measurements || [] });
 
 export class DesignHistory {
   constructor(limit = 60) { this.limit = limit; this.entries = []; this.index = -1; }
@@ -25,11 +27,11 @@ export function validateDesignFile(data) {
     throw new Error('El diseño debe contener hasta 100 elementos.');
   const ids = new Set();
   const elements = data.elements.map(e => {
-    if (!e || !['text','image'].includes(e.type) || !Number.isSafeInteger(e.id) || e.id < 1 || ids.has(e.id))
+    if (!e || !['text','image','vector'].includes(e.type) || !Number.isSafeInteger(e.id) || e.id < 1 || ids.has(e.id))
       throw new Error('El archivo contiene un elemento inválido o repetido.');
     ids.add(e.id);
     if (![e.x,e.y,e.w,e.rotation ?? 0].every(v => typeof v === 'number' && Number.isFinite(v))
-        || e.w < 15 || e.w > 400 || Math.abs(e.x) > 10000 || Math.abs(e.y) > 10000)
+        || e.w < (e.type === 'vector' ? .1 : 15) || e.w > 400 || Math.abs(e.x) > 10000 || Math.abs(e.y) > 10000)
       throw new Error('Revisa la posición y el tamaño de los elementos del archivo.');
     if (!e.opts || typeof e.opts !== 'object' || Array.isArray(e.opts))
       throw new Error('Faltan los ajustes de un elemento.');
@@ -54,6 +56,10 @@ export function validateDesignFile(data) {
       colorMode:e.colorMode === 'multi' ? 'multi' : 'single', pen:Number.isInteger(e.pen) && e.pen >= 0 ? e.pen : 0,
       opts:clone(e.opts) };
     if (e.type === 'text') out.text = e.text;
+    else if (e.type === 'vector') {
+      out.vector = validateVector(e.vector);out.colorMode = 'single';
+      if (e.w * out.vector.aspect > 2000) throw new Error('El alto del plano supera 2000 mm. Reduce su tamaño.');
+    }
     else {
       out.imageId = e.imageId;
       if (e.original && [e.original.x,e.original.y,e.original.w,e.original.rotation ?? 0].every(v=>typeof v==='number' && Number.isFinite(v))
@@ -63,7 +69,7 @@ export function validateDesignFile(data) {
     }
     return out;
   });
-  return { name: typeof data.name === 'string' ? data.name.slice(0,80) : 'Mi diseño', elements,
+  return { name: typeof data.name === 'string' ? data.name.slice(0,80) : 'Mi diseño', elements, measurements:validateMeasurements(data.measurements),
     sel:elements.some(e => e.id === data.sel) ? data.sel : elements[0]?.id ?? null,
     nextId:Math.max(0,...elements.map(e => e.id))+1 };
 }
